@@ -20,6 +20,9 @@ namespace SocialPluse.Services
 			_userManager = userManager;
 			_configuration = configuration;
 		}
+
+
+
 		public async Task<AuthResponse> LoginAsync(LoginRequest loginRequest)
 		{
 			// 1. Find user by email 

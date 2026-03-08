@@ -16,6 +16,9 @@ namespace SocialPluse.Presentation.Controllers
 			_authService = authService;
 		}
 
+
+
+
 		[HttpPost("register")]
 		public async Task<IActionResult> Register(RegisterRequest request)
 		{	
@@ -48,5 +51,6 @@ namespace SocialPluse.Presentation.Controllers
 				return BadRequest(new { message = ex.Message });
 			}
 		}
+
 	}
 }
