@@ -10,7 +10,7 @@ namespace SocialPluse.Domain.Entities
 		public Guid AuthorId  { get; set; } // FK => AppUser
 		public string Text { get; set; } = default!;
 		public string? MediaUrl { get; set; }
-		public DateTime CreatedAt { get; set; }
+		public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
 	}
 }

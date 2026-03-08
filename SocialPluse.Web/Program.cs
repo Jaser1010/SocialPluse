@@ -1,5 +1,8 @@
 using SocialPluse.Persistence;
+using SocialPluse.Services;
 using SocialPulse.Web.Extensions;
+using Scalar.AspNetCore;
+
 namespace SocialPulse
 {
 	public class Program
@@ -9,23 +12,22 @@ namespace SocialPulse
 			var builder = WebApplication.CreateBuilder(args);
 
 			builder.Services.AddPersistence(builder.Configuration);
-
-			// Add services to the container.
-
+			builder.Services.AddServices();
 			builder.Services.AddControllers();
 			builder.Services.AddOpenApi();
 			
 
 			var app = builder.Build();
 
-			// Configure the HTTP request pipeline.
 			if (app.Environment.IsDevelopment())
 			{
 				await app.ApplyMigrationsAsync();
 				app.MapOpenApi();
+				app.MapScalarApiReference();
 			}
 
 			app.UseHttpsRedirection();
+			app.UseAuthentication();
 			app.UseAuthorization();
 			app.MapControllers();
 
