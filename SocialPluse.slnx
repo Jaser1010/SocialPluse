@@ -1,0 +1,18 @@
+<Solution>
+  <Folder Name="/ApplicationCoreLayer/">
+    <Project Path="SocialPluse.Domain/SocialPluse.Domain.csproj" />
+    <Project Path="SocialPluse.Services.Abstraction/SocialPluse.Services.Abstraction.csproj" />
+    <Project Path="SocialPluse.Services/SocialPluse.Services.csproj" />
+  </Folder>
+  <Folder Name="/InfrastructureLayer/">
+    <Project Path="SocialPluse.Persistence/SocialPluse.Persistence.csproj" />
+  </Folder>
+  <Folder Name="/PresentationLayer/">
+    <Project Path="SocialPluse.Presentation/SocialPluse.Presentation.csproj" />
+    <Project Path="SocialPluse.Web/SocialPluse.Web.csproj" />
+  </Folder>
+  <Folder Name="/Solution Items/">
+    <File Path="docker-compose.yml" />
+  </Folder>
+  <Project Path="SocialPluse.Shared/SocialPluse.Shared.csproj" />
+</Solution>

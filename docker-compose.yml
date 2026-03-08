@@ -1,0 +1,32 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: socialpulse_postgres
+    environment:
+      POSTGRES_USER: socialpulse
+      POSTGRES_PASSWORD: socialpulse
+      POSTGRES_DB: socialpulse
+    ports:
+      - "5432:5432"
+    volumes:
+      - socialpulse_pg:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    container_name: socialpulse_redis
+    ports:
+      - "6379:6379"
+  web:
+    build:
+      context: .
+      dockerfile: SocialPulse.Web/Dockerfile
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - redis
+    environment:
+        ASPNETCORE_ENVIRONMENT: Development
+
+volumes:
+  socialpulse_pg:

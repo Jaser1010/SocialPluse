@@ -1,0 +1,6 @@
+@SocialPulse_HostAddress = http://localhost:5105
+
+GET {{SocialPulse_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
