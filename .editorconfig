@@ -32,6 +32,19 @@ dotnet_separate_import_directive_groups = false
 dotnet_sort_system_directives_first = false
 file_header_template = unset
 
+# Define the naming rule for private fields
+dotnet_naming_rule.private_fields_with_underscore.symbols = private_fields
+dotnet_naming_rule.private_fields_with_underscore.style = prefix_underscore
+dotnet_naming_rule.private_fields_with_underscore.severity = suggestion
+
+# Define the 'private_fields' group
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+
+# Define the 'prefix_underscore' style
+dotnet_naming_style.prefix_underscore.required_prefix = _
+dotnet_naming_style.prefix_underscore.capitalization = camel_case
+
 # this. and Me. preferences
 dotnet_style_qualification_for_event = false
 dotnet_style_qualification_for_field = false
