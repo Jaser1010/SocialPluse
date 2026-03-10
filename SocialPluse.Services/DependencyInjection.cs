@@ -10,6 +10,7 @@ namespace SocialPluse.Services
 			services.AddScoped<IAuthService, AuthService>();
 			services.AddScoped<IUserService, UserService>();
 			services.AddScoped<IPostService, PostService>();
+			services.AddScoped<IFollowService, FollowService>();
 			return services;
 		}
 	}
