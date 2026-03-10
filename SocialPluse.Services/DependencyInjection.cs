@@ -11,6 +11,8 @@ namespace SocialPluse.Services
 			services.AddScoped<IUserService, UserService>();
 			services.AddScoped<IPostService, PostService>();
 			services.AddScoped<IFollowService, FollowService>();
+			services.AddScoped<ILikeService, LikeService>();
+			services.AddScoped<ICommentService, CommentService>();
 			return services;
 		}
 	}
