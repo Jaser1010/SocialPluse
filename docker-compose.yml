@@ -16,17 +16,18 @@ services:
     container_name: socialpulse_redis
     ports:
       - "6379:6379"
-  web:
+
+  socialpluse.web:
     build:
       context: .
-      dockerfile: SocialPulse.Web/Dockerfile
+      dockerfile: SocialPluse.Web/Dockerfile
     ports:
       - "8080:8080"
     depends_on:
       - postgres
       - redis
     environment:
-        ASPNETCORE_ENVIRONMENT: Development
+      - ASPNETCORE_ENVIRONMENT=Development
 
 volumes:
   socialpulse_pg:

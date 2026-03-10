@@ -11,8 +11,8 @@
     <Project Path="SocialPluse.Presentation/SocialPluse.Presentation.csproj" />
     <Project Path="SocialPluse.Web/SocialPluse.Web.csproj" />
   </Folder>
-  <Folder Name="/Solution Items/">
-    <File Path="docker-compose.yml" />
-  </Folder>
+  <Project Path="docker-compose.dcproj">
+    <Build />
+  </Project>
   <Project Path="SocialPluse.Shared/SocialPluse.Shared.csproj" />
 </Solution>

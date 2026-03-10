@@ -1,7 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using SocialPluse.Persistence.DbContexts;
 
-namespace SocialPulse.Web.Extensions
+namespace SocialPluse.Web.Extensions
 {
 	public static class MigrationExtensions
 	{

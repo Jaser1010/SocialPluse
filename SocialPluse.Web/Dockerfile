@@ -12,19 +12,25 @@ EXPOSE 8081
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
-COPY ["SocialPulse.Web/SocialPulse.Web.csproj", "SocialPulse.Web/"]
-RUN dotnet restore "./SocialPulse.Web/SocialPulse.Web.csproj"
+COPY ["SocialPluse.Web/SocialPluse.Web.csproj", "SocialPluse.Web/"]
+COPY ["SocialPluse.Persistence/SocialPluse.Persistence.csproj", "SocialPluse.Persistence/"]
+COPY ["SocialPluse.Domain/SocialPluse.Domain.csproj", "SocialPluse.Domain/"]
+COPY ["SocialPluse.Services.Abstraction/SocialPluse.Services.Abstraction.csproj", "SocialPluse.Services.Abstraction/"]
+COPY ["SocialPluse.Shared/SocialPluse.Shared.csproj", "SocialPluse.Shared/"]
+COPY ["SocialPluse.Presentation/SocialPluse.Presentation.csproj", "SocialPluse.Presentation/"]
+COPY ["SocialPluse.Services/SocialPluse.Services.csproj", "SocialPluse.Services/"]
+RUN dotnet restore "./SocialPluse.Web/SocialPluse.Web.csproj"
 COPY . .
-WORKDIR "/src/SocialPulse.Web"
-RUN dotnet build "./SocialPulse.Web.csproj" -c $BUILD_CONFIGURATION -o /app/build
+WORKDIR "/src/SocialPluse.Web"
+RUN dotnet build "./SocialPluse.Web.csproj" -c $BUILD_CONFIGURATION -o /app/build
 
 # This stage is used to publish the service project to be copied to the final stage
 FROM build AS publish
 ARG BUILD_CONFIGURATION=Release
-RUN dotnet publish "./SocialPulse.Web.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
+RUN dotnet publish "./SocialPluse.Web.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
 
 # This stage is used in production or when running from VS in regular mode (Default when not using the Debug configuration)
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
-ENTRYPOINT ["dotnet", "SocialPulse.Web.dll"]
+ENTRYPOINT ["dotnet", "SocialPluse.Web.dll"]

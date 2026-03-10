@@ -8,6 +8,7 @@ namespace SocialPluse.Services
 		public static IServiceCollection AddServices(this IServiceCollection services)
 		{
 			services.AddScoped<IAuthService, AuthService>();
+			services.AddScoped<IUserService, UserService>();
 			return services;
 		}
 	}

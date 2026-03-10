@@ -36,7 +36,7 @@ namespace SocialPluse.Services
 			// 3. return new AuthResponse { ... }
 			return new AuthResponse
 			{
-				AccessToken = GenerateJwt(user),
+				AccessToken = await GenerateJwtAsync(user),
 				Username = user.UserName!,
 				Email = user.Email!
 			};
@@ -63,7 +63,7 @@ namespace SocialPluse.Services
 			// 4. return new AuthResponse{ ... };
 			return new AuthResponse
 			{
-				AccessToken = GenerateJwt(user),
+				AccessToken = await GenerateJwtAsync(user),
 				Username = user.UserName!,
 				Email = user.Email!
 			};
@@ -71,7 +71,7 @@ namespace SocialPluse.Services
 
 
 
-		private string GenerateJwt(AppUser user)
+		private async Task<string> GenerateJwtAsync(AppUser user)
 		{
 			// STEP 1 — WHO is this token for?
 			// Claims are key-value pairs baked into the token payload
@@ -79,9 +79,10 @@ namespace SocialPluse.Services
 			{
 				new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),       // subject = userId
 				new Claim(JwtRegisteredClaimNames.Email, user.Email!),            // email
-			 new Claim(JwtRegisteredClaimNames.UniqueName, user.UserName!),    // username
-			 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()) // unique token id
+				new Claim(JwtRegisteredClaimNames.UniqueName, user.UserName!),    // username
+				new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()) // unique token id
 			};
+
 			// STEP 2 — Read settings from appsettings.json
 			var key = _configuration["Jwt:Key"]!; // the secret used to sign
 			var issuer = _configuration["Jwt:Issuer"]!; // who created the token
