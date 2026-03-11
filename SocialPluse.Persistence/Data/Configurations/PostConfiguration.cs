@@ -32,6 +32,12 @@ namespace SocialPluse.Persistence
 			 .WithMany()
 			 .HasForeignKey(x => x.AuthorId)
 			 .OnDelete(DeleteBehavior.Cascade);
+
+
+			b.Property(p => p.SearchVector).HasComputedColumnSql(
+								"to_tsvector('english', coalesce(\"Text\", ''))",stored: true);
+
+			b.HasIndex(p => p.SearchVector).HasMethod("GIN");
 		}
 	}
 }

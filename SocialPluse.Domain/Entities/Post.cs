@@ -1,4 +1,5 @@
-﻿using System;
+﻿using NpgsqlTypes;
+using System;
 using System.Collections.Generic;
 using System.Text;
 
@@ -10,6 +11,7 @@ namespace SocialPluse.Domain.Entities
 		public Guid AuthorId  { get; set; } // FK => AppUser
 		public string Text { get; set; } = default!;
 		public string? MediaUrl { get; set; }
+		public NpgsqlTsVector? SearchVector { get; set; }
 		public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
 	}
