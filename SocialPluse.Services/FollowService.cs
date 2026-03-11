@@ -1,13 +1,12 @@
-﻿using Microsoft.AspNetCore.Identity;
+﻿using Hangfire;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using SocialPluse.Domain.Entities;
 using SocialPluse.Persistence.DbContexts;
 using SocialPluse.Persistence.IdentityData.Entities;
 using SocialPluse.Services.Abstraction;
 using SocialPluse.Shared.DTOs.Follows;
-using System;
-using System.Collections.Generic;
-using System.Text;
+
 
 namespace SocialPluse.Services
 {
@@ -42,6 +41,8 @@ namespace SocialPluse.Services
 
 			_appDbContext.Follows.Add(follow);
 			await _appDbContext.SaveChangesAsync();
+			BackgroundJob.Enqueue<INotificationService>(s =>
+									s.CreateFollowNotificationAsync(followeeId, followerId));
 
 			return new FollowResponse
 			{

@@ -2,9 +2,7 @@
 using SocialPluse.Persistence.IdentityData.Entities;
 using SocialPluse.Services.Abstraction;
 using SocialPluse.Shared.DTOs.Users;
-using System;
-using System.Collections.Generic;
-using System.Text;
+
 
 namespace SocialPluse.Services
 {

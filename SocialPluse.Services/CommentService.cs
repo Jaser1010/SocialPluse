@@ -1,14 +1,11 @@
-﻿using Microsoft.AspNetCore.Identity;
+﻿using Hangfire;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using SocialPluse.Domain.Entities;
 using SocialPluse.Persistence.DbContexts;
 using SocialPluse.Persistence.IdentityData.Entities;
 using SocialPluse.Services.Abstraction;
 using SocialPluse.Shared.DTOs.Comments;
-using System;
-using System.Collections.Generic;
-using System.Text;
-
 namespace SocialPluse.Services
 {
 	public class CommentService : ICommentService
@@ -24,9 +21,8 @@ namespace SocialPluse.Services
 		public async Task<CommentDto> CreateCommentAsync(Guid authorId, Guid postId, CreateCommentRequest request)
 		{
 			// 1. Check post exists → KeyNotFoundException if null
-			var postExists = await _appDbContext.Posts.AnyAsync(p => p.Id == postId);
-			if (!postExists)
-				throw new KeyNotFoundException($"Post with id {postId} not found.");
+			var post = await _appDbContext.Posts.FindAsync(postId);
+			if (post is null) throw new KeyNotFoundException($"Post with id {postId} not found.");
 			// 2. Create and save
 			var comment = new Comment
 			{
@@ -42,6 +38,9 @@ namespace SocialPluse.Services
 
 			await _appDbContext.Comments.AddAsync(comment);
 			await _appDbContext.SaveChangesAsync();
+			if (post.AuthorId != authorId)
+				BackgroundJob.Enqueue<INotificationService>(s =>
+					s.CreateCommentNotificationAsync(post.AuthorId, authorId, postId, comment.Id));
 			// 4. Return CommentDto
 			return new CommentDto
 			{

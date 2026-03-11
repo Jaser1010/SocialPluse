@@ -1,11 +1,9 @@
-﻿using Microsoft.AspNetCore.Identity;
+﻿using Hangfire;
+using Microsoft.AspNetCore.Identity;
 using SocialPluse.Persistence.DbContexts;
 using SocialPluse.Persistence.IdentityData.Entities;
 using SocialPluse.Services.Abstraction;
 using SocialPluse.Shared.DTOs.Likes;
-using System;
-using System.Collections.Generic;
-using System.Text;
 
 namespace SocialPluse.Services
 {
@@ -36,6 +34,9 @@ namespace SocialPluse.Services
 			};
 			var entry = await _appDbContext.Likes.AddAsync(newLike);
 			await _appDbContext.SaveChangesAsync();
+			if (post.AuthorId != userId)
+				BackgroundJob.Enqueue<INotificationService>(s =>
+					s.CreateLikeNotificationAsync(post.AuthorId, userId, postId));
 			// 4. Return LikeResponse
 			return new LikeResponse
 			{

@@ -13,6 +13,7 @@ namespace SocialPluse.Services
 			services.AddScoped<IFollowService, FollowService>();
 			services.AddScoped<ILikeService, LikeService>();
 			services.AddScoped<ICommentService, CommentService>();
+			services.AddScoped<INotificationService, NotificationService>();
 			return services;
 		}
 	}

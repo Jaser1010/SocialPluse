@@ -1,4 +1,6 @@
-﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
+﻿using Hangfire;
+using Hangfire.PostgreSql;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -78,6 +80,9 @@ namespace SocialPluse.Persistence
 					}
 				};
 			});
+			services.AddHangfire(hangfire => hangfire.UsePostgreSqlStorage(c =>
+									c.UseNpgsqlConnection(config.GetConnectionString("Postgres"))));
+			services.AddHangfireServer();
 
 			services.AddAuthorization();
 
