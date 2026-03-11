@@ -15,6 +15,7 @@ namespace SocialPluse.Services
 			services.AddScoped<ICommentService, CommentService>();
 			services.AddScoped<INotificationService, NotificationService>();
 			services.AddScoped<ISearchService, SearchService>();
+			services.AddScoped<ISafetyService, SafetyService>();
 			return services;
 		}
 	}

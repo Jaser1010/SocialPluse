@@ -27,5 +27,8 @@ namespace SocialPluse.Persistence.DbContexts
 		public DbSet<Comment> Comments { get; set; }
 		public DbSet<Notification> Notifications { get; set; }
 		public DbSet<RefreshToken> RefreshTokens { get; set; }
+		public DbSet<Block> Blocks { get; set; }
+		public DbSet<Mute> Mutes { get; set; }
+		public DbSet<Report> Reports { get; set; }
 	}
 }
