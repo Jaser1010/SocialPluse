@@ -1,375 +1,476 @@
-# SocialPulse
+# SocialPlus API
 
-### Enterprise-Grade Social Networking Platform · ASP.NET Core 10 · Clean Architecture
-
-A production-ready, modular social networking API built with clean architecture principles — featuring JWT-based authentication, ASP.NET Core Identity, Entity Framework Core, automatic migrations, and Scalar API documentation. Designed for scalability, testability, and future real-time social features.
-
-[📖 Docs](#-api-reference) · [🚀 Quick Start](#-quick-start) · [🐛 Report Bug](https://github.com/Jaser1010/SocialPluse/issues) · [💡 Request Feature](https://github.com/Jaser1010/SocialPluse/issues)
-
-[![.NET](https://img.shields.io/badge/.NET-10-512BD4?style=for-the-badge&logo=dotnet)](https://dotnet.microsoft.com/)
-[![C#](https://img.shields.io/badge/C%23-14.0-239120?style=for-the-badge&logo=csharp)](https://docs.microsoft.com/en-us/dotnet/csharp/)
-[![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
+> A production-style social media backend API built with .NET 10, Clean Architecture, PostgreSQL, Redis, SignalR, and Hangfire.
 
 ---
 
-## 📑 Table of Contents
+## 📋 Table of Contents
 
-- [Highlights](#-highlights)
-- [Architecture Overview](#-architecture-overview)
-- [Solution Structure](#-solution-structure)
-- [Tech Stack](#%EF%B8%8F-tech-stack)
-- [API Reference](#-api-reference)
-- [Quick Start](#-quick-start)
-- [Configuration](#%EF%B8%8F-configuration)
-- [Design Patterns](#-design-patterns)
-- [Roadmap](#-roadmap)
-- [Contributing](#-contributing)
-- [License](#-license)
-- [Author](#-author)
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Tech Stack](#tech-stack)
+- [Features](#features)
+- [Project Structure](#project-structure)
+- [Getting Started](#getting-started)
+- [Environment Configuration](#environment-configuration)
+- [API Reference](#api-reference)
+- [Database Schema](#database-schema)
+- [Real-Time & Background Jobs](#real-time--background-jobs)
+- [Feed Scaling](#feed-scaling)
 
 ---
 
-## ⚡ Highlights
+## Overview
 
-| Feature | Description |
+SocialPlus is a fully-featured social media backend API — think a mini Twitter/Instagram. It supports authentication, user profiles, posts, follows, likes, comments, real-time notifications, full-text search, safety controls, and a Redis-backed scalable feed.
+
+Built as a learning project to apply **Clean/Onion Architecture** in a real-world system with genuine engineering trade-offs — not a tutorial, not a todo app.
+
+---
+
+## Architecture
+
+SocialPlus follows **Clean/Onion Architecture** with strict dependency direction — inner layers never reference outer layers.
+
+```
+┌─────────────────────────────────────────┐
+│              Web (Startup)              │  ← DI wiring, middleware, SignalR hubs
+├─────────────────────────────────────────┤
+│           Presentation                  │  ← Controllers (thin, no business logic)
+├─────────────────────────────────────────┤
+│             Services                    │  ← Business logic implementations
+├──────────────────┬──────────────────────┤
+│ Services.        │    Persistence       │  ← EF Core, Identity, DbContext
+│ Abstraction      │                      │  ← Interfaces/contracts only
+├──────────────────┴──────────────────────┤
+│           Shared (DTOs)                 │  ← Request/Response models
+├─────────────────────────────────────────┤
+│              Domain                     │  ← Pure entities, enums, zero dependencies
+└─────────────────────────────────────────┘
+```
+
+**Core rule:** Dependencies always point inward. No EF Core in Domain. No business logic in controllers. No infrastructure concerns leaking into the core.
+
+**Key architectural decision:** `INotificationSender` in `Services.Abstraction` bridges SignalR (Web layer) from the Services layer — avoids layer violations while enabling real-time push.
+
+---
+
+## Tech Stack
+
+| Technology | Purpose |
 |---|---|
-| 🏛️ **Clean Architecture** | 7 dedicated projects with strict inward-only dependency flow |
-| 🔐 **JWT Authentication** | User registration, login & role-based authorization via ASP.NET Core Identity |
-| 📖 **Interactive API Docs** | Beautiful Scalar UI + OpenAPI specification |
-| 🔄 **Auto Migrations** | Database schema updates applied automatically in development |
-| 🛡️ **Global Exception Handling** | Consistent error responses with proper HTTP status codes |
-| 📦 **Modular Design** | Clear separation: Domain → Application → Infrastructure → Presentation |
-| ⚡ **High Performance** | Built on .NET 10 with optimized EF Core patterns |
-| 🔒 **Security First** | HTTPS, authentication & authorization middleware configured |
+| ASP.NET Core Web API (.NET 10) | Backend framework |
+| Entity Framework Core (Npgsql) | ORM + migrations |
+| PostgreSQL 16 | Primary database |
+| Redis 7 | Feed cache (sorted sets) |
+| ASP.NET Core Identity | User management + password hashing |
+| JWT Bearer Authentication | Stateless auth |
+| SignalR | Real-time notification delivery |
+| Hangfire | Background job processing |
+| Docker Compose | Local development environment |
+| Scalar | API documentation UI |
 
 ---
 
-## 🏛 Architecture Overview
+## Features
 
-Clean Architecture (Onion) with **strict inward-only dependencies**:
+### ✅ Authentication & Authorization
+- Register and login with JWT Bearer tokens
+- Claims-based identity (`sub`, `email`, `unique_name`, `jti`)
+- Passwords hashed via ASP.NET Core Identity
 
-```
-┌────────────────────────────────────────────────────────────────┐
-│              Presentation (Web + Controllers)                  │
-├────────────────────────────────────────────────────────────────┤
-│           Application (Services + Abstractions)                │
-├────────────────────────────────────────────────────────────────┤
-│               Infrastructure (Persistence)                     │
-├────────────────────────────────────────────────────────────────┤
-│          Domain (Entities + Contracts) [No Dependencies]       │
-└────────────────────────────────────────────────────────────────┘
-              ▲ Dependencies flow inward only ▲
-```
+### ✅ User Profiles
+- Public profile lookup by username
+- Authenticated profile update (display name, bio, avatar URL)
+
+### ✅ Posts
+- Create, view, and delete posts
+- Author-only delete enforcement
+- MediaUrl support for external image/video links
+
+### ✅ Feed (Cursor Pagination)
+- Infinite scroll feed from followees
+- Cursor-based pagination using timestamps — scales where OFFSET doesn't
+- Redis-backed feed with fan-out on write (see [Feed Scaling](#feed-scaling))
+
+### ✅ Follow System
+- Follow / unfollow users
+- Self-follow prevention via DB check constraint
+- Duplicate follow prevention via composite PK
+
+### ✅ Likes & Comments
+- One like per user per post (composite PK guarantee)
+- Cursor-paginated comments per post
+- Batch username fetching — zero N+1 queries
+
+### ✅ Notifications
+- Stored notifications in DB (available offline)
+- Real-time push via SignalR when recipient is connected
+- Background job processing via Hangfire (non-blocking)
+- Notification types: Follow, Like, Comment
+- Mark as read endpoint
+
+### ✅ Full-Text Search
+- Post search using PostgreSQL `tsvector` computed column + GIN index
+- `websearch_to_tsquery` — supports phrases, AND/OR, exclusions
+- User search using `ILIKE` for case-insensitive partial matching
+
+### ✅ Safety (Block, Mute, Report)
+- **Block** — bidirectional content hiding
+- **Mute** — one-directional silent hiding
+- **Report** — content moderation with status workflow (`pending` → `reviewed` → `dismissed`)
+
+### ✅ Feed Scaling (Redis Fan-out)
+- Fan-out on write via Hangfire background jobs
+- Redis sorted sets keyed by `feed:{userId}`
+- Unix timestamp scores for natural newest-first ordering
+- 500 item cap per feed + 7-day TTL
 
 ---
 
-## 📁 Solution Structure
+## Project Structure
 
 ```
-SocialPluse.sln
+SocialPlus/
+├── SocialPluse.Domain/
+│   ├── Entities/          # Post, Follow, Like, Comment, Notification,
+│   │                      # Block, Mute, Report, RefreshToken
+│   └── Enums/             # NotificationType
 │
-├── SocialPluse.Domain/              # Core business entities (zero dependencies)
-│   ├── Entities/                    # User, Post, Comment, etc.
-│   └── Contracts/                   # Repository interfaces
-│
-├── SocialPluse.Persistence/         # Data access implementation
-│   ├── Data/                        # DbContext, Migrations, Configurations
-│   └── Repositories/                # Repository implementations
+├── SocialPluse.Shared/
+│   └── DTOs/              # Auth, Users, Posts, Comments, Likes,
+│                          # Notifications, Search, Safety
 │
 ├── SocialPluse.Services.Abstraction/
-│   ├── IAuthService.cs
-│   └── DTOs/                        # LoginRequest, RegisterRequest, AuthResponse
+│   └── Interfaces/        # IAuthService, IUserService, IPostService,
+│                          # IFollowService, ILikeService, ICommentService,
+│                          # INotificationService, INotificationSender,
+│                          # ISearchService, ISafetyService
 │
-├── SocialPluse.Services/            # Business logic implementation
-│   ├── AuthService.cs
-│   ├── MappingProfiles/
-│   └── DependencyInjection.cs
+├── SocialPluse.Services/
+│   └── Implementations/   # Business logic for all features
+│
+├── SocialPluse.Persistence/
+│   ├── DbContexts/        # AppDbContext
+│   ├── IdentityData/      # AppUser (IdentityUser<Guid>)
+│   ├── Data/
+│   │   └── Configurations/ # EF entity configurations
+│   └── Migrations/        # EF Core migrations
 │
 ├── SocialPluse.Presentation/
-│   └── Controllers/                 # AuthController, ApiBaseController
+│   └── Controllers/       # AuthController, UsersController, PostsController,
+│                          # FollowsController, LikesController, CommentsController,
+│                          # NotificationsController, SearchController,
+│                          # BlocksController, MutesController, ReportsController
 │
-├── SocialPluse.Shared/              # Cross-cutting utilities
-│   ├── Result/                      # Result pattern
-│   └── Extensions/
+├── SocialPluse.Web/
+│   ├── Hubs/              # NotificationHub, SignalRNotificationSender,
+│   │                      # SubClaimUserIdProvider
+│   ├── Middleware/        # GlobalExceptionMiddleware
+│   ├── Extensions/        # MigrationExtensions
+│   └── Program.cs         # Startup + DI wiring
 │
-└── SocialPluse.Web/                 # Application entry point
-    ├── Extensions/                  # MigrationExtensions
-    ├── Program.cs
-    └── appsettings.json
+└── docker-compose.yml     # PostgreSQL + Redis containers
 ```
 
 ---
 
-## 🛠️ Tech Stack
-
-| Category | Technology |
-|---|---|
-| **Framework** | ASP.NET Core 10 |
-| **Language** | C# 14.0 |
-| **ORM** | Entity Framework Core |
-| **Database** | SQL Server |
-| **Authentication** | ASP.NET Core Identity + JWT Bearer |
-| **API Docs** | Scalar + OpenAPI 3.0 |
-| **Architecture** | Clean/Onion Architecture |
-
-**Future Integrations:** Redis (Phase 2), SignalR (Phase 2), Azure Storage (Phase 1), Elasticsearch (Phase 4), Docker (Phase 6)
-
----
-
-## 📖 API Reference
-
-### 🔐 Authentication — `/api/auth`
-
-| Method | Endpoint | Auth | Description |
-|---|---|---|---|
-| `POST` | `/api/auth/register` | ❌ | Register new user |
-| `POST` | `/api/auth/login` | ❌ | Login and receive JWT |
-| `GET` | `/api/auth/me` | ✅ JWT | Get current user (Future) |
-
-**Register/Login Request:**
-```json
-{
-  "email": "user@example.com",
-  "password": "SecurePass123!",
-  "displayName": "John Doe"
-}
-```
-
-**Response:**
-```json
-{
-  "userId": "guid",
-  "email": "user@example.com",
-  "displayName": "John Doe",
-  "token": "<jwt-token>",
-  "expiresAt": "2025-01-15T12:00:00Z"
-}
-```
-
----
-
-### 👥 Users — `/api/users` *(Phase 1)*
-
-| Method | Endpoint | Auth | Description |
-|---|---|---|---|
-| `GET` | `/api/users/{id}` | ✅ JWT | Get user profile |
-| `PUT` | `/api/users/{id}` | ✅ JWT | Update profile |
-| `POST` | `/api/users/{id}/avatar` | ✅ JWT | Upload avatar |
-| `GET` | `/api/users/search?q=` | ✅ JWT | Search users |
-
----
-
-### 📝 Posts — `/api/posts` *(Phase 1)*
-
-| Method | Endpoint | Auth | Description |
-|---|---|---|---|
-| `GET` | `/api/posts` | ✅ JWT | Get feed (paginated) |
-| `GET` | `/api/posts/{id}` | ✅ JWT | Get single post |
-| `POST` | `/api/posts` | ✅ JWT | Create post |
-| `PUT` | `/api/posts/{id}` | ✅ JWT | Update post |
-| `DELETE` | `/api/posts/{id}` | ✅ JWT | Delete post |
-| `POST` | `/api/posts/{id}/like` | ✅ JWT | Like/unlike |
-
----
-
-### 💬 Comments — `/api/comments` *(Phase 1)*
-
-| Method | Endpoint | Auth | Description |
-|---|---|---|---|
-| `POST` | `/api/posts/{postId}/comments` | ✅ JWT | Add comment |
-| `PUT` | `/api/comments/{id}` | ✅ JWT | Edit comment |
-| `DELETE` | `/api/comments/{id}` | ✅ JWT | Delete comment |
-
----
-
-### 🤝 Connections — `/api/connections` *(Phase 1)*
-
-| Method | Endpoint | Auth | Description |
-|---|---|---|---|
-| `POST` | `/api/connections/request` | ✅ JWT | Send friend request |
-| `POST` | `/api/connections/accept` | ✅ JWT | Accept request |
-| `DELETE` | `/api/connections/{id}` | ✅ JWT | Remove connection |
-| `GET` | `/api/connections/followers` | ✅ JWT | Get followers |
-| `GET` | `/api/connections/following` | ✅ JWT | Get following |
-
----
-
-### 💬 Messages — `/api/messages` *(Phase 2 - SignalR)*
-### 🔔 Notifications — `/api/notifications` *(Phase 2)*
-### 👥 Groups — `/api/groups` *(Phase 3)*
-
-*Full endpoint documentation coming with implementation*
-
----
-
-## 🚀 Quick Start
+## Getting Started
 
 ### Prerequisites
 
+- [Docker Desktop](https://www.docker.com/products/docker-desktop)
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
-- [SQL Server](https://www.microsoft.com/sql-server) or SQL Server Express
-- [Visual Studio 2026](https://visualstudio.microsoft.com/) or VS Code
-- [Git](https://git-scm.com/)
+- Visual Studio 2022+ or VS Code
 
-### Step-by-Step Setup
+### 1. Clone the repository
 
-**1. Clone the repository**
-```powershell
+```bash
 git clone https://github.com/Jaser1010/SocialPluse.git
-cd SocialPulse
+cd SocialPluse
 ```
 
-**2. Configure the database** (`SocialPluse.Web/appsettings.Development.json`)
+### 2. Start infrastructure
+
+```bash
+docker compose up -d
+```
+
+This starts:
+- `socialpulse_postgres` on port `5432`
+- `socialpulse_redis` on port `6379`
+
+### 3. Run the API
+
+```bash
+cd SocialPluse.Web
+dotnet run
+```
+
+Migrations are applied automatically on startup via `ApplyMigrationsAsync()`.
+
+### 4. Open API docs
+
+```
+http://localhost:6500/scalar/v1
+```
+
+### 5. Hangfire dashboard (dev only)
+
+```
+http://localhost:6500/hangfire
+```
+
+---
+
+## Environment Configuration
+
+**`appsettings.json`** (Docker / Production):
 ```json
 {
-  "ConnectionStrings": {
-    "DefaultConnection": "Server=.;Database=SocialPulseDb;Trusted_Connection=True;TrustServerCertificate=True;"
-  },
-  "JwtSettings": {
-    "SecretKey": "<your-secret-key-min-32-characters>",
+  "Jwt": {
     "Issuer": "SocialPulse",
-    "Audience": "SocialPulseUsers",
+    "Audience": "SocialPulse",
+    "Key": "YOUR_SECRET_KEY_MINIMUM_32_CHARS",
     "ExpiryMinutes": 60
+  },
+  "ConnectionStrings": {
+    "Postgres": "Host=socialpulse_postgres;Port=5432;Database=socialpulse;Username=socialpulse;Password=socialpulse",
+    "Redis": "socialpulse_redis:6379"
   }
 }
 ```
 
-**3. Restore & build**
-```powershell
-dotnet restore
-dotnet build
+**`appsettings.Development.json`** (Local):
+```json
+{
+  "ConnectionStrings": {
+    "Postgres": "Host=localhost;Port=5432;Database=socialpulse;Username=socialpulse;Password=socialpulse",
+    "Redis": "localhost:6379"
+  }
+}
 ```
 
-**4. Run the application**
-```powershell
-dotnet run --project SocialPluse.Web
+---
+
+## API Reference
+
+### Authentication
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/api/auth/register` | ❌ | Register new user |
+| POST | `/api/auth/login` | ❌ | Login, returns JWT |
+
+### Users
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/api/users/{username}` | ❌ | Get public profile |
+| GET | `/api/users/me` | ✅ | Get own profile |
+| PUT | `/api/users/me` | ✅ | Update own profile |
+
+### Posts & Feed
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/api/posts` | ✅ | Create post |
+| GET | `/api/posts/{id}` | ❌ | Get post by ID |
+| DELETE | `/api/posts/{id}` | ✅ | Delete own post |
+| GET | `/api/feed?cursor=&limit=` | ✅ | Get feed (Redis) |
+
+### Follow
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/api/follows/{userId}` | ✅ | Follow user |
+| DELETE | `/api/follows/{userId}` | ✅ | Unfollow user |
+
+### Likes
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/api/posts/{postId}/likes` | ✅ | Like post |
+| DELETE | `/api/posts/{postId}/likes` | ✅ | Unlike post |
+
+### Comments
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/api/posts/{postId}/comments` | ✅ | Add comment |
+| GET | `/api/posts/{postId}/comments?cursor=&limit=` | ❌ | List comments |
+
+### Notifications
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/api/notifications?cursor=&limit=` | ✅ | Get notifications |
+| POST | `/api/notifications/{id}/read` | ✅ | Mark as read |
+
+### Search
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/api/search/posts?q=&limit=` | ❌ | Full-text post search |
+| GET | `/api/search/users?q=&limit=` | ❌ | User search |
+
+### Safety
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/api/blocks/{userId}` | ✅ | Block user |
+| DELETE | `/api/blocks/{userId}` | ✅ | Unblock user |
+| POST | `/api/mutes/{userId}` | ✅ | Mute user |
+| DELETE | `/api/mutes/{userId}` | ✅ | Unmute user |
+| POST | `/api/reports` | ✅ | Submit report |
+| GET | `/api/reports/me` | ✅ | Get my reports |
+
+### Real-Time (SignalR)
+| Endpoint | Description |
+|----------|-------------|
+| `/hubs/notifications` | WebSocket hub — receives `notification` events |
+
+---
+
+## Database Schema
+
+### Core Tables
+
+```
+AspNetUsers       → AppUser (Identity)
+Posts             → Id, AuthorId, Text, MediaUrl, CreatedAt, SearchVector (tsvector)
+Follows           → (FollowerId, FolloweeId) composite PK
+Likes             → (UserId, PostId) composite PK
+Comments          → Id, PostId, AuthorId, Text, CreatedAt
+Notifications     → Id, RecipientUserId, ActorUserId, Type, PostId?, CommentId?, IsRead, CreatedAt
 ```
 
-Or press **F5** in Visual Studio.
+### Safety Tables
 
-**5. Access the API**
-- 🌐 Base: `https://localhost:5001`
-- 📖 Scalar Docs: `https://localhost:5001/scalar`
-- 📝 OpenAPI: `https://localhost:5001/openapi`
-
-> Migrations apply automatically in Development mode
-
----
-
-## ⚙️ Configuration
-
-| Key | Description | Example |
-|---|---|---|
-| `ConnectionStrings:DefaultConnection` | SQL Server connection | `Server=.;Database=SocialPulseDb;Trusted_Connection=True;` |
-| `JwtSettings:SecretKey` | JWT signing key (32+ chars) | `your-super-secret-key-here` |
-| `JwtSettings:Issuer` | Token issuer | `SocialPulse` |
-| `JwtSettings:Audience` | Token audience | `SocialPulseUsers` |
-| `JwtSettings:ExpiryMinutes` | Token expiration | `60` |
-
----
-
-## 🔬 Design Patterns
-
-### Result Pattern
-Service methods return `Result<T>` for predictable error handling without exceptions:
-
-```csharp
-var result = await _authService.LoginAsync(request);
-if (result.IsFailure)
-    return BadRequest(result.Error);
-return Ok(result.Value);
+```
+Blocks            → (BlockerId, BlockedId) composite PK + CK_Block_NotSelf
+Mutes             → (MuterId, MutedId) composite PK + CK_Mute_NotSelf
+Reports           → Id, ReporterId, TargetType, TargetId, Reason, Status (default: 'pending')
 ```
 
-### Dependency Injection
-All dependencies registered via extension methods:
+### Key Indexes
 
-```csharp
-builder.Services.AddPersistence(builder.Configuration);
-builder.Services.AddServices();
-builder.Services.AddControllers();
-builder.Services.AddOpenApi();
+```sql
+-- Feed/profile queries
+INDEX ON Posts (AuthorId, CreatedAt)
+
+-- Comment pagination
+INDEX ON Comments (PostId, CreatedAt)
+
+-- Notification queries
+INDEX ON Notifications (RecipientUserId, IsRead, CreatedAt)
+
+-- Full-text search
+SearchVector tsvector GENERATED ALWAYS AS (to_tsvector('english', coalesce("Text", ''))) STORED
+INDEX ON Posts USING GIN (SearchVector)
+
+-- Report lookups
+INDEX ON Reports (ReporterId)
+INDEX ON Reports (TargetType, TargetId)
 ```
 
-### Repository Pattern *(Future)*
-Generic repository for data access abstraction.
+---
 
-### Unit of Work Pattern *(Future)*
-Transactional consistency across multiple repositories.
+## Real-Time & Background Jobs
+
+### Notification Flow
+
+```
+User likes a post
+  └─► LikeService saves Like to DB
+  └─► BackgroundJob.Enqueue(CreateLikeNotificationAsync)
+  └─► HTTP returns 200 immediately ⚡
+
+  (Hangfire background worker)
+  └─► NotificationService creates Notification record in DB
+  └─► INotificationSender.SendAsync called
+  └─► SignalRNotificationSender pushes to group "user_{recipientId}"
+        ├─ Recipient online  → instant delivery via WebSocket
+        └─ Recipient offline → notification waits in DB
+```
+
+### SignalR Authentication
+
+Clients connect to `/hubs/notifications` with a JWT token:
+
+```javascript
+const connection = new HubConnectionBuilder()
+    .withUrl("/hubs/notifications", {
+        accessTokenFactory: () => token
+    })
+    .build();
+
+connection.on("notification", (data) => {
+    console.log("New notification:", data);
+});
+```
 
 ---
 
-## 🗺️ Roadmap
+## Feed Scaling
 
-### Phase 1: Core Social Features (Q1-Q2 2025)
-- [ ] User profiles (view, edit, avatar/cover upload)
-- [ ] Social connections (friend requests, follow/unfollow)
-- [ ] Content creation (posts with rich media)
-- [ ] Social interactions (like, comment, share, mentions)
+### The Problem
 
-### Phase 2: Advanced Engagement (Q3 2025)
-- [ ] Real-time messaging (SignalR one-on-one & group chat)
-- [ ] Notifications system (real-time push, in-app, email)
-- [ ] Content discovery (personalized feed, trending, hashtags)
-- [ ] Stories (24-hour ephemeral content)
+A naive feed query gets slower as the social graph grows:
+```sql
+-- Gets slower at scale
+SELECT * FROM Posts
+WHERE AuthorId IN (SELECT FolloweeId FROM Follows WHERE FollowerId = @userId)
+ORDER BY CreatedAt DESC
+LIMIT 20
+```
 
-### Phase 3: Community & Groups (Q4 2025)
-- [ ] Groups & communities (public/private with roles)
-- [ ] Events management (RSVP, reminders, calendar)
-- [ ] Content moderation (AI-powered, reporting, admin tools)
+### The Solution — Fan-out on Write
 
-### Phase 4: Intelligence & Analytics (Q1 2026)
-- [ ] AI-powered features (recommendations, sentiment analysis)
-- [ ] Analytics & insights (engagement metrics, growth tracking)
-- [ ] Advanced search (Elasticsearch full-text & semantic search)
+**Write path** (post creation):
+```
+POST /api/posts
+  └─► Save post to PostgreSQL
+  └─► BackgroundJob.Enqueue(FanoutPostToFeedAsync)
+  └─► Return 200 immediately
 
-### Phase 5: Enterprise & Monetization (Q2 2026)
-- [ ] Business accounts (verified badges, sponsored posts)
-- [ ] Marketplace (product listings, reviews, payments)
-- [ ] Live streaming (broadcast, chat, recording)
-- [ ] Public API & webhooks (OAuth2, rate limiting)
+  (Hangfire background worker)
+  └─► Fetch all follower IDs from DB
+  └─► For each follower:
+        ZADD feed:{followerId} {unix_timestamp_ms} {postId}
+        ZREMRANGEBYRANK (trim to 500 items max)
+        EXPIRE 7 days
+```
 
-### Phase 6: Global Scale & Performance (Q3-Q4 2026)
-- [ ] Multi-region support (CDN, localization, i18n)
-- [ ] Performance optimization (Redis, GraphQL, message queues)
-- [ ] Mobile & cross-platform (SDKs, PWA, offline sync)
+**Read path** (feed request):
+```
+GET /api/feed
+  └─► ZRANGEBYSCORE feed:{userId} (Redis — microseconds, no joins)
+  └─► Batch fetch post details by IDs from PostgreSQL
+  └─► Batch fetch author usernames
+  └─► Return feed
+```
 
----
+### Why Redis Sorted Sets?
 
-## 🤝 Contributing
-
-Contributions welcome! Please follow these steps:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m "feat: add amazing feature"`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-**Commit Convention:** `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`
+- Score = Unix timestamp → naturally ordered newest-first
+- O(log N) inserts regardless of feed size
+- TTL keeps memory bounded automatically
+- 500 item cap prevents unbounded growth
 
 ---
 
-## 📄 License
+## Patterns Used
 
-This project is licensed under the **MIT License**.
+| Pattern | Applied In |
+|---|---|
+| Cursor pagination | Feed, Comments, Notifications |
+| Batch `ToDictionaryAsync` (no N+1) | Feed, Comments, Notifications, Search |
+| Composite PK uniqueness | Follow, Like, Block, Mute |
+| DB check constraints | Follow (not self), Block (not self), Mute (not self) |
+| Background jobs (non-blocking) | Notifications, Feed fan-out |
+| Interface bridge (layer isolation) | `INotificationSender` |
+| Computed DB columns | `SearchVector` tsvector |
+| Redis sorted sets | Feed fan-out |
+| Global exception middleware | All controllers |
 
 ---
 
-## 👤 Author
+## License
 
-**Jaser Kasim**
-
-[![GitHub](https://img.shields.io/badge/GitHub-Jaser1010-181717?style=for-the-badge&logo=github)](https://github.com/Jaser1010)
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0077B5?style=for-the-badge&logo=linkedin)](https://linkedin.com/in/jaser-kasim)
+This project is for educational purposes.
 
 ---
 
-<div align="center">
-
-### 🚀 Built with .NET 10 for the future of social networking
-
-**[⬆ Back to Top](#socialpluse)**
-
-<sub>Made with ❤️ by [Jaser Kasim](https://github.com/Jaser1010) · ⭐ Star if you find this helpful!</sub>
-
-</div>
+*Built by [Jaser](https://github.com/Jaser1010) — documented every step of the way.*
