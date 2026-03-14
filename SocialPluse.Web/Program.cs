@@ -7,6 +7,8 @@ using SocialPluse.Services.Abstraction;
 using SocialPluse.Web.Extensions;
 using SocialPluse.Web.Hubs;
 using SocialPluse.Web.Middleware;
+using Hangfire.Dashboard;
+
 
 namespace SocialPluse
 {
@@ -43,14 +45,17 @@ namespace SocialPluse
 			app.UseAuthorization(); // Enable authorization middleware
 
 
-
+			app.UseHangfireDashboard("/hangfire", new DashboardOptions
+			{
+				Authorization = []  // allow all — dev only!
+			});
 
 			if (app.Environment.IsDevelopment()) // Only apply migrations and map OpenAPI in development environment
 			{
 				await app.ApplyMigrationsAsync(); // Apply database migrations at startup
 				app.MapOpenApi(); // Map OpenAPI/Swagger endpoints for API documentation
 				app.MapScalarApiReference(); // Map Scalar API reference for development/testing purposes
-				app.UseHangfireDashboard("/hangfire"); // dev monitoring UI
+				// app.UseHangfireDashboard("/hangfire"); // dev monitoring UI
 			}
 
 

@@ -6,7 +6,7 @@ namespace SocialPluse.Shared.DTOs.Posts
 {
 	public class FeedRequest
 	{
-		public DateTime? Cursor { get; set; }
+		public string? Cursor { get; set; }
 		public int Limit { get; set; }
 	}
 }

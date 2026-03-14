@@ -88,13 +88,13 @@ namespace SocialPluse.Presentation.Controllers
 
 		[Authorize]
 		[HttpGet("feed")]
-		public async Task<IActionResult> GetFeed([FromQuery] FeedRequest request)
+		public async Task<IActionResult> GetFeed([FromQuery] string? cursor, [FromQuery] int limit = 20)
 		{
 			var userId = GetUserId();
 			if (userId == null) return Unauthorized();
 			try
 			{
-				var result = await _postService.GetFeedAsync(userId.Value, request);
+				var result = await _postService.GetFeedFromCacheAsync(userId.Value, cursor, limit);
 				return Ok(result);
 			}
 			catch (KeyNotFoundException ex)

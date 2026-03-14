@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using SocialPluse.Persistence.DbContexts;
 using SocialPluse.Persistence.IdentityData.Entities;
+using StackExchange.Redis;
 using System.Text;
 
 namespace SocialPluse.Persistence
@@ -16,9 +17,11 @@ namespace SocialPluse.Persistence
 	{
 		public static IServiceCollection AddPersistence(this IServiceCollection services, IConfiguration config)
 		{
+			// Database configuration
 			services.AddDbContext<AppDbContext>(options =>
 				options.UseNpgsql(config.GetConnectionString("Postgres")));
 
+			// Identity configuration
 			services.AddIdentityCore<AppUser>(options =>
 			{
 				options.User.RequireUniqueEmail = true;
@@ -28,6 +31,7 @@ namespace SocialPluse.Persistence
 			.AddEntityFrameworkStores<AppDbContext>()
 			.AddSignInManager();
 
+			// JWT Authentication configuration
 			services.AddAuthentication(options =>
 			{
 				options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -50,6 +54,7 @@ namespace SocialPluse.Persistence
 					ClockSkew = TimeSpan.Zero
 				};
 
+				// Add event handlers for debugging purposes
 				options.Events = new JwtBearerEvents
 				{
 					OnMessageReceived = context =>
@@ -80,10 +85,27 @@ namespace SocialPluse.Persistence
 					}
 				};
 			});
+
+			// Hangfire configuration
 			services.AddHangfire(hangfire => hangfire.UsePostgreSqlStorage(c =>
 									c.UseNpgsqlConnection(config.GetConnectionString("Postgres"))));
+
+
+
+
+			// Redis cache configuration
+			services.AddStackExchangeRedisCache(options =>
+									options.Configuration = config.GetConnectionString("Redis"));
+			services.AddSingleton<IConnectionMultiplexer>(
+				ConnectionMultiplexer.Connect(config.GetConnectionString("Redis")!));
+
+
+
+
+			// Add Hangfire server to process background jobs
 			services.AddHangfireServer();
 
+			// Add authorization services (if needed for policies or role-based access)
 			services.AddAuthorization();
 
 			return services;

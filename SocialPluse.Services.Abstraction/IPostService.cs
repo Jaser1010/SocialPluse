@@ -8,5 +8,9 @@ namespace SocialPluse.Services.Abstraction
 		Task<PostDto> GetByIdAsync(Guid postId);
 		Task DeletePostAsync(Guid postId, Guid requestingUserId);
 		Task<FeedResponse> GetFeedAsync(Guid userId, FeedRequest request);
+
+		Task FanoutPostToFeedAsync(Guid postId, Guid authorId);
+		Task<FeedResponse> GetFeedFromCacheAsync(Guid userId, string? cursor, int limit);
+
 	}
 }
