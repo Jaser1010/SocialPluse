@@ -30,8 +30,13 @@ namespace SocialPluse.Presentation.Controllers
 		{
 			var currentUserId = GetCurrentUserId();
 			if (currentUserId == Guid.Empty)	return Unauthorized();
-			var result = await _safetyService.MuteUserAsync(currentUserId, userId);
-			return Ok(result);
+			try
+			{
+				var result = await _safetyService.MuteUserAsync(currentUserId, userId);
+				return Ok(result);
+			}
+			catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+			catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
 		}
 
 		[HttpDelete("{userId:guid}")]
@@ -39,8 +44,12 @@ namespace SocialPluse.Presentation.Controllers
 		{
 			var currentUserId = GetCurrentUserId();
 			if (currentUserId == Guid.Empty)	return Unauthorized();
-			await _safetyService.UnmuteUserAsync(currentUserId, userId);
-			return Ok("User unmuted successfully.");
+			try
+			{
+				await _safetyService.UnmuteUserAsync(currentUserId, userId);
+				return NoContent();
+			}
+			catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
 		}
 	}
 }

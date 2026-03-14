@@ -29,8 +29,14 @@ namespace SocialPluse.Presentation.Controllers
 		{
 			var currentUserId = GetCurrentUserId();
 			if (currentUserId == Guid.Empty)	return Unauthorized();
-			var result = await _safetyService.BlockUserAsync(currentUserId, userId);
-			return Ok(result);
+			try
+			{
+				var result = await _safetyService.BlockUserAsync(currentUserId, userId);
+				return Ok(result);
+			}
+			catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+			catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+
 		}
 
 
@@ -40,8 +46,12 @@ namespace SocialPluse.Presentation.Controllers
 		{
 			var currentUserId = GetCurrentUserId();
 			if (currentUserId == Guid.Empty)	return Unauthorized();
-			await _safetyService.UnblockUserAsync(currentUserId, userId);
-			return Ok("User unblocked successfully.");
+			try
+			{
+				await _safetyService.UnblockUserAsync(currentUserId, userId);
+				return NoContent();
+			}
+			catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
 		}
 	}
 }

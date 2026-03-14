@@ -19,10 +19,6 @@ namespace SocialPluse.Services
 		public async Task<BlockResponse> BlockUserAsync(Guid blockerId, Guid blockedId)
 		{
 			if (blockerId == blockedId) throw new InvalidOperationException("Cannot block yourself.");
-
-			// 1. blockerId != blockedId → InvalidOperationException("Cannot block yourself.")
-			var blocker = await _appDbContext.Users.FindAsync(blockerId);
-			if (blocker == null)	throw new KeyNotFoundException("Blocker user not found.");
 			
 			// 2. FindAsync(blockerId, blockedId) → if not null → InvalidOperationException("Already blocked.")
 			var existingBlock = await _appDbContext.Blocks.FindAsync(blockerId, blockedId);
@@ -62,10 +58,6 @@ namespace SocialPluse.Services
 		public async Task<MuteResponse> MuteUserAsync(Guid muterId, Guid mutedId)
 		{
 			if (muterId == mutedId) throw new InvalidOperationException("Cannot mute yourself.");
-
-			// Similar to BlockUserAsync but for Mute entity and MuteResponse
-			var muter = await _appDbContext.Users.FindAsync(muterId);
-			if (muter == null)	throw new KeyNotFoundException("Muter user not found.");
 			
 
 			var existingMute = await _appDbContext.Mutes.FindAsync(muterId, mutedId);
@@ -93,7 +85,7 @@ namespace SocialPluse.Services
 		}
 		public async Task UnmuteUserAsync(Guid muterId, Guid mutedId)
 		{
-			var mute = _appDbContext.Mutes.Find(muterId, mutedId);
+			var mute = await _appDbContext.Mutes.FindAsync(muterId, mutedId);
 			if (mute == null) throw new KeyNotFoundException("Mute relationship not found.");
 
 			var entry = _appDbContext.Mutes.Remove(mute);

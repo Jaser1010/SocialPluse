@@ -32,8 +32,15 @@ namespace SocialPluse.Presentation.Controllers
 		{
 			var currentUserId = GetCurrentUserId();
 			if (currentUserId == Guid.Empty)	return Unauthorized();
-			var result = await _safetyService.CreateReportAsync(currentUserId, request); 
-			return Ok(result);
+			try
+			{
+
+				var result = await _safetyService.CreateReportAsync(currentUserId, request);
+				return Ok(result);
+			}
+			catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+
+
 		}
 
 		[HttpGet("me")]
