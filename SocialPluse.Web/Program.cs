@@ -32,6 +32,16 @@ namespace SocialPluse
 			builder.Services.AddScoped<INotificationSender, SignalRNotificationSender>(); // DI binding for notification sender using SignalR
 			builder.Services.AddSingleton<IUserIdProvider, SubClaimUserIdProvider>(); // JWT claim mapping for SignalR user identification
 
+			// CORS policy for React frontend
+			builder.Services.AddCors(options =>
+			{
+				options.AddPolicy("AllowFrontend", policy =>
+					policy.WithOrigins("http://localhost:5173")
+						  .AllowAnyHeader()
+						  .AllowAnyMethod()
+						  .AllowCredentials());
+			});
+
 
 
 			var app = builder.Build(); // Build the application
@@ -39,8 +49,10 @@ namespace SocialPluse
 
 
 
+			app.UseCors("AllowFrontend"); // Enable CORS for React frontend
 			app.UseGlobalExceptionMiddleware();  // Add global exception handling middleware
-			app.UseHttpsRedirection(); // Redirect HTTP requests to HTTPS
+			if (!app.Environment.IsDevelopment())
+				app.UseHttpsRedirection(); // Redirect HTTP requests to HTTPS
 			app.UseAuthentication(); // Enable authentication middleware
 			app.UseAuthorization(); // Enable authorization middleware
 
