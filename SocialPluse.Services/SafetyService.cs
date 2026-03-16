@@ -1,7 +1,8 @@
-﻿using SocialPluse.Persistence.DbContexts;
+﻿using Hangfire;
+using Microsoft.EntityFrameworkCore;
+using SocialPluse.Persistence.DbContexts;
 using SocialPluse.Services.Abstraction;
 using SocialPluse.Shared.DTOs.Safety;
-using Microsoft.EntityFrameworkCore;
 
 namespace SocialPluse.Services
 {
@@ -122,7 +123,9 @@ namespace SocialPluse.Services
 			// 4. Add, SaveChangesAsync, return ReportDto
 			var entry = _appDbContext.Reports.Add(report);
 			await _appDbContext.SaveChangesAsync();
-
+			if (TargetType == "user")
+				BackgroundJob.Enqueue<INotificationService>(s =>
+					s.CreateReportNotificationAsync(request.TargetId, reporterId));
 			if (TargetType == "user" && request.TargetId != reporterId)
 			{
 				await _notificationService.CreateReportNotificationAsync(request.TargetId, reporterId);
