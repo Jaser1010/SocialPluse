@@ -13,6 +13,6 @@ namespace SocialPluse.Web.Hubs
 		public async Task SendAsync(Guid recipientId, NotificationDto dto)
 			=> await _hubContext.Clients
 				.Group($"user_{recipientId}")
-				.SendAsync("notification", dto);
+				.SendAsync("ReceiveNotification", dto);
 	}
 }

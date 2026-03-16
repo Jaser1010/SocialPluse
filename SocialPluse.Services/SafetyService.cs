@@ -8,10 +8,12 @@ namespace SocialPluse.Services
 	public class SafetyService : ISafetyService
 	{
 		private readonly AppDbContext _appDbContext;
+		private readonly INotificationService _notificationService;
 
-		public SafetyService(AppDbContext appDbContext)
+		public SafetyService(AppDbContext appDbContext, INotificationService notificationService)
 		{
 			_appDbContext = appDbContext;
+			_notificationService = notificationService;
 		}
 
 
@@ -120,6 +122,12 @@ namespace SocialPluse.Services
 			// 4. Add, SaveChangesAsync, return ReportDto
 			var entry = _appDbContext.Reports.Add(report);
 			await _appDbContext.SaveChangesAsync();
+
+			if (TargetType == "user" && request.TargetId != reporterId)
+			{
+				await _notificationService.CreateReportNotificationAsync(request.TargetId, reporterId);
+			}
+
 			return new ReportDto
 			{
 				Id = entry.Entity.Id,

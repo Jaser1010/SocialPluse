@@ -11,6 +11,9 @@ namespace SocialPluse.Shared.DTOs.Posts
 		public string AuthorUsername { get; set; } = default!;
 		public string Text { get; set; } = default!;
 		public string? MediaUrl { get; set; }
+		public int LikesCount { get; set; }
+		public int CommentsCount { get; set; }
+		public bool IsLikedByCurrentUser { get; set; }
 		public DateTime CreatedAt { get; set; }
 	}
 }

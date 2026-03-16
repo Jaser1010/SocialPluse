@@ -54,7 +54,7 @@ namespace SocialPluse.Presentation.Controllers
 		{
 			try
 			{
-				var result = await _postService.GetByIdAsync(id);
+				var result = await _postService.GetByIdAsync(id, GetUserId());
 				return Ok(result);
 			}
 			catch (KeyNotFoundException ex)

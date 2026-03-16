@@ -11,6 +11,7 @@ namespace SocialPluse.Services.Abstraction
 		Task CreateFollowNotificationAsync(Guid recipientId, Guid actorId);
 		Task CreateLikeNotificationAsync(Guid recipientId, Guid actorId, Guid postId);
 		Task CreateCommentNotificationAsync(Guid recipientId, Guid actorId, Guid postId, Guid commentId);
+		Task CreateReportNotificationAsync(Guid recipientId, Guid actorId);
 
 		// Called by controller
 		Task<NotificationResponse> GetNotificationsAsync(Guid userId, DateTime? cursor, int limit);

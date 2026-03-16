@@ -63,5 +63,11 @@ namespace SocialPluse.Services
 			// 3. SaveChangesAsync()	
 			await _appDbContext.SaveChangesAsync();
 		}
+
+		public async Task<bool> IsFollowingAsync(Guid followerId, Guid followeeId)
+		{
+			return await _appDbContext.Follows
+				.AnyAsync(f => f.FollowerId == followerId && f.FolloweeId == followeeId);
+		}
 	}
 }
