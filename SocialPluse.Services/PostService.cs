@@ -195,7 +195,7 @@ namespace SocialPluse.Services
 			};
 		}
 
-		private async Task<List<PostDto>> EnrichPostsAsync(List<Post> posts, Guid? currentUserId = null)
+	private async Task<List<PostDto>> EnrichPostsAsync(List<Post> posts, Guid? currentUserId = null)
 		{
 			if (posts.Count == 0)
 			{
@@ -243,6 +243,51 @@ namespace SocialPluse.Services
 				IsLikedByCurrentUser = likedPostIds.Contains(p.Id),
 				CreatedAt = p.CreatedAt
 			}).ToList();
+		}
+
+		public async Task BackfillFolloweeFeedAsync(Guid followerId, Guid followeeId)
+		{
+			// Get the followee's most recent 500 posts
+			var posts = await _appDbContext.Posts
+				.Where(p => p.AuthorId == followeeId)
+				.OrderByDescending(p => p.CreatedAt)
+				.Take(500)
+				.ToListAsync();
+
+			if (posts.Count == 0) return;
+
+			var db = _redis.GetDatabase();
+			var key = $"feed:{followerId}";
+
+			foreach (var post in posts)
+			{
+				var score = (double)((DateTimeOffset)post.CreatedAt).ToUnixTimeMilliseconds();
+				await db.SortedSetAddAsync(key, post.Id.ToString(), score);
+			}
+
+			// Cap at 500 and refresh expiry
+			await db.SortedSetRemoveRangeByRankAsync(key, 0, -501);
+			await db.KeyExpireAsync(key, TimeSpan.FromDays(7));
+		}
+
+		public async Task InvalidateFeedCacheAsync(Guid userId)
+		{
+			var db = _redis.GetDatabase();
+			await db.KeyDeleteAsync($"feed:{userId}");
+		}
+
+		public async Task<int> GetNewPostsCountAsync(Guid userId, DateTime since)
+		{
+			var followeeIds = await _appDbContext.Follows
+				.Where(f => f.FollowerId == userId)
+				.Select(f => f.FolloweeId)
+				.ToListAsync();
+
+			followeeIds.Add(userId);
+
+			return await _appDbContext.Posts
+				.Where(p => followeeIds.Contains(p.AuthorId) && p.CreatedAt > since)
+				.CountAsync();
 		}
 	}
 }

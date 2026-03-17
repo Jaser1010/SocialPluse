@@ -102,5 +102,19 @@ namespace SocialPluse.Presentation.Controllers
 				return NotFound(new { message = ex.Message });
 			}
 		}
+
+		[Authorize]
+		[HttpGet("feed/new")]
+		public async Task<IActionResult> GetNewPostsCount([FromQuery] string? since)
+		{
+			var userId = GetUserId();
+			if (userId == null) return Unauthorized();
+
+			if (!DateTime.TryParse(since, null, System.Globalization.DateTimeStyles.RoundtripKind, out var sinceDate))
+				sinceDate = DateTime.UtcNow.AddMinutes(-1);
+
+			var count = await _postService.GetNewPostsCountAsync(userId.Value, sinceDate);
+			return Ok(new { count });
+		}
 	}
 }
