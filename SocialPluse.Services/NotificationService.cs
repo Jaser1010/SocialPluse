@@ -34,6 +34,8 @@
 					RecipientUserId = recipientId,
 					ActorUserId = actorId,
 					Type = NotificationType.Comment,
+					PostId = postId,
+					CommentId = commentId,
 					IsRead = false,
 					CreatedAt = DateTime.UtcNow
 				};
@@ -92,6 +94,7 @@
 					RecipientUserId = recipientId,
 					ActorUserId = actorId,
 					Type = NotificationType.Like,
+					PostId = postId,
 					IsRead = false,
 					CreatedAt = DateTime.UtcNow
 				};
@@ -111,12 +114,40 @@
 				});
 			}
 
-			public async Task<NotificationResponse> GetNotificationsAsync(Guid userId, DateTime? cursor, int limit)
+			public async Task CreateReportNotificationAsync(Guid recipientId, Guid actorId)
+			{
+				var actor = await _userManager.FindByIdAsync(actorId.ToString());
+
+				var notification = new Notification
+				{
+					Id = Guid.NewGuid(),
+					RecipientUserId = recipientId,
+					ActorUserId = actorId,
+					Type = NotificationType.Report,
+					IsRead = false,
+					CreatedAt = DateTime.UtcNow
+				};
+
+				_appDbContext.Notifications.Add(notification);
+				await _appDbContext.SaveChangesAsync();
+
+				await _notificationSender.SendAsync(recipientId, new NotificationDto
+				{
+					Id = notification.Id,
+					ActorUserId = actorId,
+					ActorUsername = "Anonymous",
+					Type = NotificationType.Report,
+					IsRead = false,
+					CreatedAt = notification.CreatedAt
+				});
+			}
+
+			public async Task<NotificationResponse> GetNotificationsAsync(Guid userId, string? cursor, int limit)
 			{
 				var query = _appDbContext.Notifications.Where(n => n.RecipientUserId == userId);
 
-				if (cursor.HasValue)
-					query = query.Where(n => n.CreatedAt < cursor.Value);
+				if (cursor != null && DateTime.TryParse(cursor, out var cursorDate))
+					query = query.Where(n => n.CreatedAt < cursorDate);
 
 				var clampedLimit = Math.Clamp(limit, 1, 50);
 
@@ -136,7 +167,9 @@
 					{
 						Id = n.Id,
 						ActorUserId = n.ActorUserId,
-						ActorUsername = actors.GetValueOrDefault(n.ActorUserId, "Unknown"),
+						ActorUsername = n.Type == NotificationType.Report
+							? "Anonymous"
+							: actors.GetValueOrDefault(n.ActorUserId, "Unknown"),
 						Type = n.Type,
 						PostId = n.PostId,
 						CommentId = n.CommentId,
@@ -144,7 +177,7 @@
 						CreatedAt = n.CreatedAt
 					}).ToList(),
 
-					NextCursor = notifications.Count == clampedLimit? notifications.Last().CreatedAt: null
+					NextCursor = notifications.Count == clampedLimit? notifications.Last().CreatedAt.ToString("O"): null
 				};
 			}
 

@@ -55,6 +55,9 @@ namespace SocialPluse.Services
 				AuthorUsername = user.UserName!,
 				Text = createdPost.Text,
 				MediaUrl = createdPost.MediaUrl,
+				LikesCount = 0,
+				CommentsCount = 0,
+				IsLikedByCurrentUser = false,
 				CreatedAt = createdPost.CreatedAt
 			};
 		}
@@ -73,23 +76,12 @@ namespace SocialPluse.Services
 			return;
 		}
 
-		public async Task<PostDto> GetByIdAsync(Guid postId)
+		public async Task<PostDto> GetByIdAsync(Guid postId, Guid? currentUserId = null)
 		{
 			// 1. Query: FindAsync(postId)
 			var post = await _appDbContext.Posts.FindAsync(postId);
 			if (post == null) throw new KeyNotFoundException($"Post with ID {postId} not found.");
-			// 2. Get author username
-			var author = await _userManager.FindByIdAsync(post.AuthorId.ToString());
-			// 3. Return PostDto
-			return new PostDto
-			{
-				Id = post.Id,
-				AuthorId = post.AuthorId,
-				AuthorUsername = author?.UserName ?? "Unknown",
-				Text = post.Text,
-				MediaUrl = post.MediaUrl,
-				CreatedAt = post.CreatedAt
-			};
+			return (await EnrichPostsAsync([post], currentUserId)).Single();
 		}
 
 		public async Task<FeedResponse> GetFeedAsync(Guid userId, FeedRequest request)
@@ -99,6 +91,8 @@ namespace SocialPluse.Services
 															.Where(f => f.FollowerId == userId)
 															.Select(f => f.FolloweeId)
 															.ToListAsync();
+			followeeIds.Add(userId);
+			followeeIds = followeeIds.Distinct().ToList();
 			// 2. Query posts from followees with cursor pagination
 			var query = _appDbContext.Posts.Where(p => followeeIds.Contains(p.AuthorId));
 
@@ -111,18 +105,7 @@ namespace SocialPluse.Services
 				.OrderByDescending(p => p.CreatedAt)
 				.Take(limit)
 				.ToListAsync();
-			// 3. Build PostDto list — you'll need usernames, so fetch them
-			var authorIds = posts.Select(p => p.AuthorId).Distinct().ToList();
-			var authors = await _userManager.Users.Where(u => authorIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.UserName!);
-			var postDtos = posts.Select(p => new PostDto
-			{
-				Id = p.Id,
-				AuthorId = p.AuthorId,
-				AuthorUsername = authors.ContainsKey(p.AuthorId) ? authors[p.AuthorId] : "Unknown",
-				Text = p.Text,
-				MediaUrl = p.MediaUrl,
-				CreatedAt = p.CreatedAt
-			}).ToList();
+			var postDtos = await EnrichPostsAsync(posts, userId);
 			// 4. Set NextCursor and return
 			return new FeedResponse
 			{
@@ -142,6 +125,8 @@ namespace SocialPluse.Services
 				.Where(f => f.FolloweeId == authorId)
 				.Select(f => f.FollowerId)
 				.ToListAsync();
+			followerIds.Add(authorId);
+			followerIds = followerIds.Distinct().ToList();
 
 			// 2. Get post for timestamp score
 			var post = await _appDbContext.Posts.FindAsync(postId);
@@ -174,7 +159,18 @@ namespace SocialPluse.Services
 				take: clampedLimit);
 
 			if (entries.Length == 0)
+			{
+				if (cursor == null)
+				{
+					return await GetFeedAsync(userId, new FeedRequest
+					{
+						Cursor = null,
+						Limit = clampedLimit
+					});
+				}
+
 				return new FeedResponse { Posts = [], NextCursor = null };
+			}
 
 			// Batch fetch posts preserving Redis order
 			var postIds = entries.Select(e => Guid.Parse((string)e.Element!)).ToList();
@@ -188,27 +184,110 @@ namespace SocialPluse.Services
 				.Select(id => postMap[id])
 				.ToList();
 
-			// Batch fetch usernames
-			var authorIds = orderedPosts.Select(p => p.AuthorId).Distinct().ToList();
-			var authors = await _userManager.Users
-				.Where(u => authorIds.Contains(u.Id))
-				.ToDictionaryAsync(u => u.Id, u => u.UserName!);
+			var postDtos = await EnrichPostsAsync(orderedPosts, userId);
 
 			return new FeedResponse
 			{
-				Posts = orderedPosts.Select(p => new PostDto
-				{
-					Id = p.Id,
-					AuthorId = p.AuthorId,
-					AuthorUsername = authors.GetValueOrDefault(p.AuthorId, "Unknown"),
-					Text = p.Text,
-					MediaUrl = p.MediaUrl,
-					CreatedAt = p.CreatedAt
-				}).ToList(),
+				Posts = postDtos,
 				NextCursor = entries.Length == clampedLimit
 					? entries.Last().Score.ToString()
 					: null
 			};
+		}
+
+	private async Task<List<PostDto>> EnrichPostsAsync(List<Post> posts, Guid? currentUserId = null)
+		{
+			if (posts.Count == 0)
+			{
+				return [];
+			}
+
+			var postIds = posts.Select(p => p.Id).ToList();
+			var authorIds = posts.Select(p => p.AuthorId).Distinct().ToList();
+
+			var authors = await _userManager.Users
+				.Where(u => authorIds.Contains(u.Id))
+				.ToDictionaryAsync(u => u.Id, u => u.UserName!);
+
+			var likeCounts = await _appDbContext.Likes
+				.Where(l => postIds.Contains(l.PostId))
+				.GroupBy(l => l.PostId)
+				.Select(group => new { PostId = group.Key, Count = group.Count() })
+				.ToDictionaryAsync(x => x.PostId, x => x.Count);
+
+			var commentCounts = await _appDbContext.Comments
+				.Where(c => postIds.Contains(c.PostId))
+				.GroupBy(c => c.PostId)
+				.Select(group => new { PostId = group.Key, Count = group.Count() })
+				.ToDictionaryAsync(x => x.PostId, x => x.Count);
+
+			HashSet<Guid> likedPostIds = [];
+			if (currentUserId.HasValue)
+			{
+				likedPostIds = (await _appDbContext.Likes
+					.Where(l => l.UserId == currentUserId.Value && postIds.Contains(l.PostId))
+					.Select(l => l.PostId)
+					.ToListAsync())
+					.ToHashSet();
+			}
+
+			return posts.Select(p => new PostDto
+			{
+				Id = p.Id,
+				AuthorId = p.AuthorId,
+				AuthorUsername = authors.GetValueOrDefault(p.AuthorId, "Unknown"),
+				Text = p.Text,
+				MediaUrl = p.MediaUrl,
+				LikesCount = likeCounts.GetValueOrDefault(p.Id, 0),
+				CommentsCount = commentCounts.GetValueOrDefault(p.Id, 0),
+				IsLikedByCurrentUser = likedPostIds.Contains(p.Id),
+				CreatedAt = p.CreatedAt
+			}).ToList();
+		}
+
+		public async Task BackfillFolloweeFeedAsync(Guid followerId, Guid followeeId)
+		{
+			// Get the followee's most recent 500 posts
+			var posts = await _appDbContext.Posts
+				.Where(p => p.AuthorId == followeeId)
+				.OrderByDescending(p => p.CreatedAt)
+				.Take(500)
+				.ToListAsync();
+
+			if (posts.Count == 0) return;
+
+			var db = _redis.GetDatabase();
+			var key = $"feed:{followerId}";
+
+			foreach (var post in posts)
+			{
+				var score = (double)((DateTimeOffset)post.CreatedAt).ToUnixTimeMilliseconds();
+				await db.SortedSetAddAsync(key, post.Id.ToString(), score);
+			}
+
+			// Cap at 500 and refresh expiry
+			await db.SortedSetRemoveRangeByRankAsync(key, 0, -501);
+			await db.KeyExpireAsync(key, TimeSpan.FromDays(7));
+		}
+
+		public async Task InvalidateFeedCacheAsync(Guid userId)
+		{
+			var db = _redis.GetDatabase();
+			await db.KeyDeleteAsync($"feed:{userId}");
+		}
+
+		public async Task<int> GetNewPostsCountAsync(Guid userId, DateTime since)
+		{
+			var followeeIds = await _appDbContext.Follows
+				.Where(f => f.FollowerId == userId)
+				.Select(f => f.FolloweeId)
+				.ToListAsync();
+
+			followeeIds.Add(userId);
+
+			return await _appDbContext.Posts
+				.Where(p => followeeIds.Contains(p.AuthorId) && p.CreatedAt > since)
+				.CountAsync();
 		}
 	}
 }

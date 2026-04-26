@@ -57,5 +57,14 @@ namespace SocialPluse.Presentation.Controllers
 				return NotFound(new { message = ex.Message });
 			}
 		}
+
+		[HttpGet("{userId:guid}/status")]
+		public async Task<IActionResult> GetFollowStatus(Guid userId)
+		{
+			var followerId = GetUserId();
+			if (followerId == null) return Unauthorized();
+			var isFollowing = await _followService.IsFollowingAsync(followerId.Value, userId);
+			return Ok(new { isFollowing });
+		}
 	}
 }

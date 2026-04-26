@@ -7,6 +7,6 @@ namespace SocialPluse.Shared.DTOs.Notifications
 	public class NotificationResponse
 	{
 		public List<NotificationDto> Notifications { get; set; } = new List<NotificationDto>();
-		public DateTime? NextCursor { get; set; }
+		public string? NextCursor { get; set; }
 	}
 }

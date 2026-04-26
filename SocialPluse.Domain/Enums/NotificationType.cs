@@ -8,6 +8,7 @@ namespace SocialPluse.Domain.Enums
 	{
 		Follow = 1,
 		Like = 2,
-		Comment = 3
+		Comment = 3,
+		Report = 4
 	}
 }
