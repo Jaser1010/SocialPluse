@@ -142,12 +142,12 @@
 				});
 			}
 
-			public async Task<NotificationResponse> GetNotificationsAsync(Guid userId, DateTime? cursor, int limit)
+			public async Task<NotificationResponse> GetNotificationsAsync(Guid userId, string? cursor, int limit)
 			{
 				var query = _appDbContext.Notifications.Where(n => n.RecipientUserId == userId);
 
-				if (cursor.HasValue)
-					query = query.Where(n => n.CreatedAt < cursor.Value);
+				if (cursor != null && DateTime.TryParse(cursor, out var cursorDate))
+					query = query.Where(n => n.CreatedAt < cursorDate);
 
 				var clampedLimit = Math.Clamp(limit, 1, 50);
 
@@ -177,7 +177,7 @@
 						CreatedAt = n.CreatedAt
 					}).ToList(),
 
-					NextCursor = notifications.Count == clampedLimit? notifications.Last().CreatedAt: null
+					NextCursor = notifications.Count == clampedLimit? notifications.Last().CreatedAt.ToString("O"): null
 				};
 			}
 

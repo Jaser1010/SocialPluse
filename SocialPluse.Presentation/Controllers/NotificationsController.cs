@@ -24,7 +24,7 @@ namespace SocialPluse.Presentation.Controllers
 		}
 
 		[HttpGet]
-		public async Task<IActionResult> GetNotifications([FromQuery] DateTime? cursor, [FromQuery] int limit = 20)
+		public async Task<IActionResult> GetNotifications([FromQuery] string? cursor, [FromQuery] int limit = 20)
 		{
 			var userId = GetUserId();
 			if (userId == null) return Unauthorized();

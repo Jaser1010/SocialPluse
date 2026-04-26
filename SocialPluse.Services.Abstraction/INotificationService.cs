@@ -14,7 +14,7 @@ namespace SocialPluse.Services.Abstraction
 		Task CreateReportNotificationAsync(Guid recipientId, Guid actorId);
 
 		// Called by controller
-		Task<NotificationResponse> GetNotificationsAsync(Guid userId, DateTime? cursor, int limit);
+		Task<NotificationResponse> GetNotificationsAsync(Guid userId, string? cursor, int limit);
 		Task MarkAsReadAsync(Guid notificationId, Guid userId);
 	}
 }
