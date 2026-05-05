@@ -85,5 +85,40 @@ namespace SocialPluse.Presentation.Controllers
 			}
 		}
 
+		[Authorize]
+		[HttpGet("recommendations")]
+		public async Task<IActionResult> GetRecommendations([FromQuery] int limit = 3)
+		{
+			var userIdClaim = User.FindFirst("sub")?.Value;
+			if (string.IsNullOrWhiteSpace(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+				return Unauthorized();
+
+			var recommendations = await _userService.GetRecommendationsAsync(userId, limit);
+			return Ok(recommendations);
+		}
+
+		[Authorize]
+		[HttpPost("me/change-password")]
+		public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
+		{
+			var userIdClaim = User.FindFirst("sub")?.Value;
+			if (string.IsNullOrWhiteSpace(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+				return Unauthorized();
+
+			try
+			{
+				await _userService.ChangePasswordAsync(userId, request);
+				return NoContent();
+			}
+			catch (KeyNotFoundException ex)
+			{
+				return NotFound(new { message = ex.Message });
+			}
+			catch (InvalidOperationException ex)
+			{
+				return BadRequest(new { message = ex.Message });
+			}
+		}
+
 	}
 }

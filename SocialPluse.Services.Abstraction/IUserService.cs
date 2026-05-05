@@ -10,5 +10,7 @@ namespace SocialPluse.Services.Abstraction
 		public Task<UserProfileDto> GetCurrentUserAsync(Guid userId);
 		Task<UserProfileDto> GetByUsernameAsync(string username);
 		Task<UserProfileDto> UpdateProfileAsync(Guid userId, UpdateProfileRequest request);
+		Task<List<UserRecommendationDto>> GetRecommendationsAsync(Guid userId, int limit);
+		Task ChangePasswordAsync(Guid userId, ChangePasswordRequest request);
 	}
 }

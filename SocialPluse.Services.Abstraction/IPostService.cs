@@ -1,4 +1,5 @@
 ﻿using SocialPluse.Shared.DTOs.Posts;
+using SocialPluse.Shared.DTOs.Users;
 
 namespace SocialPluse.Services.Abstraction
 {
@@ -20,5 +21,10 @@ namespace SocialPluse.Services.Abstraction
 
 		/// <summary>Returns the count of posts newer than <paramref name="since"/> that belong to the user's feed.</summary>
 		Task<int> GetNewPostsCountAsync(Guid userId, DateTime since);
+
+		Task<List<TrendingTopicDto>> GetTrendingTopicsAsync(Guid userId, int limit = 8, int hours = 72);
+		Task<bool> ToggleBookmarkAsync(Guid userId, Guid postId, bool shouldBookmark);
+		Task<FeedResponse> GetBookmarkedPostsAsync(Guid userId, string? cursor, int limit);
+		Task<UserAnalyticsDto> GetUserAnalyticsAsync(Guid userId);
 	}
 }

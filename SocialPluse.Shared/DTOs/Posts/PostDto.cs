@@ -14,6 +14,7 @@ namespace SocialPluse.Shared.DTOs.Posts
 		public int LikesCount { get; set; }
 		public int CommentsCount { get; set; }
 		public bool IsLikedByCurrentUser { get; set; }
+		public bool IsBookmarkedByCurrentUser { get; set; }
 		public DateTime CreatedAt { get; set; }
 	}
 }

@@ -50,6 +50,7 @@ namespace SocialPluse
 
 
 			app.UseCors("AllowFrontend"); // Enable CORS for React frontend
+			app.UseStaticFiles(); // Serve uploaded media under /wwwroot
 			app.UseGlobalExceptionMiddleware();  // Add global exception handling middleware
 			if (!app.Environment.IsDevelopment())
 				app.UseHttpsRedirection(); // Redirect HTTP requests to HTTPS

@@ -5,8 +5,10 @@ using SocialPluse.Persistence.DbContexts;
 using SocialPluse.Persistence.IdentityData.Entities;
 using SocialPluse.Services.Abstraction;
 using SocialPluse.Shared.DTOs.Posts;
+using SocialPluse.Shared.DTOs.Users;
 using StackExchange.Redis;
 using Hangfire;
+using System.Text.RegularExpressions;
 
 namespace SocialPluse.Services
 {
@@ -58,6 +60,7 @@ namespace SocialPluse.Services
 				LikesCount = 0,
 				CommentsCount = 0,
 				IsLikedByCurrentUser = false,
+				IsBookmarkedByCurrentUser = false,
 				CreatedAt = createdPost.CreatedAt
 			};
 		}
@@ -222,11 +225,18 @@ namespace SocialPluse.Services
 				.ToDictionaryAsync(x => x.PostId, x => x.Count);
 
 			HashSet<Guid> likedPostIds = [];
+			HashSet<Guid> bookmarkedPostIds = [];
 			if (currentUserId.HasValue)
 			{
 				likedPostIds = (await _appDbContext.Likes
 					.Where(l => l.UserId == currentUserId.Value && postIds.Contains(l.PostId))
 					.Select(l => l.PostId)
+					.ToListAsync())
+					.ToHashSet();
+
+				bookmarkedPostIds = (await _appDbContext.Bookmarks
+					.Where(b => b.UserId == currentUserId.Value && postIds.Contains(b.PostId))
+					.Select(b => b.PostId)
 					.ToListAsync())
 					.ToHashSet();
 			}
@@ -241,6 +251,7 @@ namespace SocialPluse.Services
 				LikesCount = likeCounts.GetValueOrDefault(p.Id, 0),
 				CommentsCount = commentCounts.GetValueOrDefault(p.Id, 0),
 				IsLikedByCurrentUser = likedPostIds.Contains(p.Id),
+				IsBookmarkedByCurrentUser = bookmarkedPostIds.Contains(p.Id),
 				CreatedAt = p.CreatedAt
 			}).ToList();
 		}
@@ -288,6 +299,140 @@ namespace SocialPluse.Services
 			return await _appDbContext.Posts
 				.Where(p => followeeIds.Contains(p.AuthorId) && p.CreatedAt > since)
 				.CountAsync();
+		}
+
+		public async Task<List<TrendingTopicDto>> GetTrendingTopicsAsync(Guid userId, int limit = 8, int hours = 72)
+		{
+			var clampedLimit = Math.Clamp(limit, 1, 20);
+			var from = DateTime.UtcNow.AddHours(-Math.Clamp(hours, 1, 168));
+
+			var followeeIds = await _appDbContext.Follows
+				.Where(f => f.FollowerId == userId)
+				.Select(f => f.FolloweeId)
+				.ToListAsync();
+			followeeIds.Add(userId);
+
+			var texts = await _appDbContext.Posts
+				.Where(p => followeeIds.Contains(p.AuthorId) && p.CreatedAt >= from)
+				.OrderByDescending(p => p.CreatedAt)
+				.Select(p => p.Text)
+				.Take(3000)
+				.ToListAsync();
+
+			var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+			foreach (var text in texts)
+			{
+				if (string.IsNullOrWhiteSpace(text)) continue;
+				var matches = Regex.Matches(text, @"#([A-Za-z0-9_]{2,50})");
+				foreach (Match match in matches)
+				{
+					var tag = "#" + match.Groups[1].Value;
+					counts[tag] = counts.TryGetValue(tag, out var current) ? current + 1 : 1;
+				}
+			}
+
+			return counts
+				.OrderByDescending(kvp => kvp.Value)
+				.ThenBy(kvp => kvp.Key)
+				.Take(clampedLimit)
+				.Select(kvp => new TrendingTopicDto { Hashtag = kvp.Key, Mentions = kvp.Value })
+				.ToList();
+		}
+
+		public async Task<bool> ToggleBookmarkAsync(Guid userId, Guid postId, bool shouldBookmark)
+		{
+			var exists = await _appDbContext.Bookmarks.AnyAsync(b => b.UserId == userId && b.PostId == postId);
+			if (shouldBookmark)
+			{
+				if (exists) return true;
+				var postExists = await _appDbContext.Posts.AnyAsync(p => p.Id == postId);
+				if (!postExists) throw new KeyNotFoundException("Post not found.");
+
+				_appDbContext.Bookmarks.Add(new Bookmark
+				{
+					UserId = userId,
+					PostId = postId,
+					CreatedAt = DateTime.UtcNow,
+				});
+				await _appDbContext.SaveChangesAsync();
+				return true;
+			}
+
+			if (!exists) return false;
+			var bookmark = await _appDbContext.Bookmarks.FindAsync(userId, postId);
+			if (bookmark is not null)
+			{
+				_appDbContext.Bookmarks.Remove(bookmark);
+				await _appDbContext.SaveChangesAsync();
+			}
+			return false;
+		}
+
+		public async Task<FeedResponse> GetBookmarkedPostsAsync(Guid userId, string? cursor, int limit)
+		{
+			var clampedLimit = Math.Clamp(limit, 1, 50);
+			var query = _appDbContext.Bookmarks
+				.Where(b => b.UserId == userId);
+
+			if (!string.IsNullOrWhiteSpace(cursor) && DateTime.TryParse(cursor, out var cursorDate))
+			{
+				query = query.Where(b => b.CreatedAt < cursorDate);
+			}
+
+			var bookmarkRows = await query
+				.OrderByDescending(b => b.CreatedAt)
+				.Take(clampedLimit)
+				.ToListAsync();
+
+			var postIds = bookmarkRows.Select(b => b.PostId).ToList();
+			var posts = await _appDbContext.Posts
+				.Where(p => postIds.Contains(p.Id))
+				.ToListAsync();
+
+			var postMap = posts.ToDictionary(p => p.Id);
+			var orderedPosts = postIds.Where(postMap.ContainsKey).Select(id => postMap[id]).ToList();
+			var postDtos = await EnrichPostsAsync(orderedPosts, userId);
+
+			return new FeedResponse
+			{
+				Posts = postDtos,
+				NextCursor = bookmarkRows.Count == clampedLimit
+					? bookmarkRows.Last().CreatedAt.ToString("O")
+					: null,
+			};
+		}
+
+		public async Task<UserAnalyticsDto> GetUserAnalyticsAsync(Guid userId)
+		{
+			var postsCount = await _appDbContext.Posts.CountAsync(p => p.AuthorId == userId);
+			var followersCount = await _appDbContext.Follows.CountAsync(f => f.FolloweeId == userId);
+			var followingCount = await _appDbContext.Follows.CountAsync(f => f.FollowerId == userId);
+			var bookmarksCount = await _appDbContext.Bookmarks.CountAsync(b => b.UserId == userId);
+			var unreadNotifications = await _appDbContext.Notifications.CountAsync(n => n.RecipientUserId == userId && !n.IsRead);
+
+			var myPostIds = await _appDbContext.Posts
+				.Where(p => p.AuthorId == userId)
+				.Select(p => p.Id)
+				.ToListAsync();
+
+			var likesReceived = 0;
+			var commentsReceived = 0;
+			if (myPostIds.Count > 0)
+			{
+				likesReceived = await _appDbContext.Likes.CountAsync(l => myPostIds.Contains(l.PostId));
+				commentsReceived = await _appDbContext.Comments.CountAsync(c => myPostIds.Contains(c.PostId));
+			}
+
+			return new UserAnalyticsDto
+			{
+				PostsCount = postsCount,
+				FollowersCount = followersCount,
+				FollowingCount = followingCount,
+				LikesReceived = likesReceived,
+				CommentsReceived = commentsReceived,
+				BookmarksCount = bookmarksCount,
+				UnreadNotifications = unreadNotifications,
+			};
 		}
 	}
 }
