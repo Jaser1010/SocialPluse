@@ -1,393 +1,129 @@
-﻿using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
-using SocialPluse.Domain.Entities;
-using SocialPluse.Persistence.DbContexts;
-using SocialPluse.Persistence.IdentityData.Entities;
-using SocialPluse.Services.Abstraction;
+﻿using SocialPluse.Domain.Entities;
+using SocialPluse.Services.Abstraction.IRepositories;
+using SocialPluse.Services.Abstraction.IService;
 using SocialPluse.Shared.DTOs.Posts;
 using SocialPluse.Shared.DTOs.Users;
-using StackExchange.Redis;
-using Hangfire;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.RegularExpressions;
+using SocialPluse.Services.Mappers;
 
 namespace SocialPluse.Services
 {
 	public class PostService : IPostService
 	{
-		private readonly UserManager<AppUser> _userManager;
-		private readonly AppDbContext _appDbContext;
-		private readonly IConnectionMultiplexer _redis;
+		private readonly IPostRepository _postRepository;
+		private readonly IUserRepository _userRepository;
+		private readonly IFeedCacheService _feedCache;
+		private readonly IBackgroundJobPublisher _jobPublisher;
 
-		public PostService(UserManager<AppUser> userManager, AppDbContext appDbContext,IConnectionMultiplexer redis)
+		public PostService(
+			IPostRepository postRepository,
+			IUserRepository userRepository,
+			IFeedCacheService feedCache,
+			IBackgroundJobPublisher jobPublisher)
 		{
-			_userManager = userManager;
-			_appDbContext = appDbContext;
-			_redis = redis;
+			_postRepository = postRepository;
+			_userRepository = userRepository;
+			_feedCache = feedCache;
+			_jobPublisher = jobPublisher;
 		}
 
-
-		public async Task<PostDto> CreatePostAsync(Guid authorId, CreatePostRequest request)
+		public async Task<PostDto> CreatePostAsync(Guid authorId, CreatePostRequest createPostRequest)
 		{
-			// 1. Find user by authorId using UserManager → if null throw KeyNotFoundException
-			var user = await _userManager.FindByIdAsync(authorId.ToString());
-			if (user == null)	throw new KeyNotFoundException($"User with ID {authorId} not found.");
-			// 2. Create new Post entity and save to database
+			var username = await _userRepository.GetUsernameAsync(authorId);
+			if (username == null) throw new KeyNotFoundException($"User with ID {authorId} not found.");
+
 			var post = new Post
 			{
 				Id = Guid.NewGuid(),
 				AuthorId = authorId,
-				Text = request.Text,
-				MediaUrl = request.MediaUrl,
+				Text = createPostRequest.Text,
+				MediaUrl = createPostRequest.MediaUrl,
 				CreatedAt = DateTime.UtcNow
 			};
-			// 3. Add(post)
-			var entry = _appDbContext.Posts.Add(post);
-			// 4. SaveChangesAsync()
-			var result = await _appDbContext.SaveChangesAsync();
-			// 5. Fanout to followers' feeds using Hangfire background job
-			BackgroundJob.Enqueue<IPostService>(s =>
-					s.FanoutPostToFeedAsync(post.Id, post.AuthorId));
-			if (result <= 0) throw new Exception("Failed to create post.");
-			 var createdPost = entry.Entity;
-			// 6. Return PostDto — map the fields
+
+			await _postRepository.AddAsync(post);
+			var affectedRows = await _postRepository.SaveChangesAsync();
+			if (affectedRows <= 0) throw new InvalidOperationException("Failed to save post to the database.");
+
+			_jobPublisher.EnqueuePostFanoutJob(post.Id, post.AuthorId);
+
 			return new PostDto
 			{
-				Id = createdPost.Id,
-				AuthorId = createdPost.AuthorId,
-				AuthorUsername = user.UserName!,
-				Text = createdPost.Text,
-				MediaUrl = createdPost.MediaUrl,
+				Id = post.Id,
+				AuthorId = post.AuthorId,
+				AuthorUsername = username,
+				Text = post.Text,
+				MediaUrl = post.MediaUrl,
 				LikesCount = 0,
 				CommentsCount = 0,
 				IsLikedByCurrentUser = false,
 				IsBookmarkedByCurrentUser = false,
-				CreatedAt = createdPost.CreatedAt
+				CreatedAt = post.CreatedAt
 			};
 		}
 
 		public async Task DeletePostAsync(Guid postId, Guid requestingUserId)
 		{
-			// 1. Find post
-			var post = await _appDbContext.Posts.FindAsync(postId);
+			var post = await _postRepository.GetByIdAsync(postId);
 			if (post == null) throw new KeyNotFoundException($"Post with ID {postId} not found.");
 			if (post.AuthorId != requestingUserId) throw new UnauthorizedAccessException("You can only delete your own posts.");
-			// 3. Remove(post)
-			var entry = _appDbContext.Posts.Remove(post);
-			// 4. SaveChangesAsync()
-			var result = await _appDbContext.SaveChangesAsync();
-			if (result <= 0) throw new Exception("Failed to delete post.");
-			return;
+
+			await _postRepository.DeleteAsync(post);
+			if (await _postRepository.SaveChangesAsync() <= 0) throw new Exception("Failed to delete post.");
 		}
 
 		public async Task<PostDto> GetByIdAsync(Guid postId, Guid? currentUserId = null)
 		{
-			// 1. Query: FindAsync(postId)
-			var post = await _appDbContext.Posts.FindAsync(postId);
+			var post = await _postRepository.GetByIdAsync(postId);
 			if (post == null) throw new KeyNotFoundException($"Post with ID {postId} not found.");
 			return (await EnrichPostsAsync([post], currentUserId)).Single();
 		}
 
 		public async Task<FeedResponse> GetFeedAsync(Guid userId, FeedRequest request)
 		{
-			// 1. Get list of followee IDs the user follows
-			var followeeIds = await _appDbContext.Follows
-															.Where(f => f.FollowerId == userId)
-															.Select(f => f.FolloweeId)
-															.ToListAsync();
-			followeeIds.Add(userId);
-			followeeIds = followeeIds.Distinct().ToList();
-			// 2. Query posts from followees with cursor pagination
-			var query = _appDbContext.Posts.Where(p => followeeIds.Contains(p.AuthorId));
+			var pageSize = Math.Clamp(request.Limit, 1, 50);
+			DateTime? cursorDate = request.Cursor != null && DateTime.TryParse(request.Cursor, out var cd) ? cd : null;
 
-			if (request.Cursor != null && DateTime.TryParse(request.Cursor, out var cursorDate))
-				query = query.Where(p => p.CreatedAt < cursorDate);
-
-			var limit = Math.Clamp(request.Limit, 1, 50);
-
-			var posts = await query
-				.OrderByDescending(p => p.CreatedAt)
-				.Take(limit)
-				.ToListAsync();
+			var posts = await _postRepository.GetFeedPostsAsync(userId, cursorDate, pageSize);
 			var postDtos = await EnrichPostsAsync(posts, userId);
-			// 4. Set NextCursor and return
+
 			return new FeedResponse
 			{
 				Posts = postDtos,
-				NextCursor = posts.Count == limit ? posts.Last().CreatedAt.ToString("O") : null
+				NextCursor = posts.Count == pageSize ? posts.Last().CreatedAt.ToString("O") : null
 			};
-
 		}
-
-
-
 
 		public async Task FanoutPostToFeedAsync(Guid postId, Guid authorId)
 		{
-			// 1. Get all follower IDs
-			var followerIds = await _appDbContext.Follows
-				.Where(f => f.FolloweeId == authorId)
-				.Select(f => f.FollowerId)
-				.ToListAsync();
+			var followerIds = await _postRepository.GetFollowerIdsAsync(authorId);
 			followerIds.Add(authorId);
 			followerIds = followerIds.Distinct().ToList();
 
-			// 2. Get post for timestamp score
-			var post = await _appDbContext.Posts.FindAsync(postId);
+			var post = await _postRepository.GetByIdAsync(postId);
 			if (post is null) return;
+
 			var score = (double)((DateTimeOffset)post.CreatedAt).ToUnixTimeMilliseconds();
 
-			// 3. Push to each follower's Redis sorted set
-			var db = _redis.GetDatabase();
-			foreach (var followerId in followerIds)
-			{
-				var key = $"feed:{followerId}";
-				await db.SortedSetAddAsync(key, postId.ToString(), score);
-				await db.SortedSetRemoveRangeByRankAsync(key, 0, -501); // keep max 500
-				await db.KeyExpireAsync(key, TimeSpan.FromDays(7));
-			}
+			await _feedCache.AddPostToFeedsAsync(followerIds, postId, score);
 		}
+
 		public async Task<FeedResponse> GetFeedFromCacheAsync(Guid userId, string? cursor, int limit)
 		{
 			var clampedLimit = Math.Clamp(limit, 1, 50);
-			var db = _redis.GetDatabase();
-			var key = $"feed:{userId}";
 
-			double maxScore = cursor != null ? double.Parse(cursor) - 1 : double.MaxValue;
+			var (postIds, nextCursor) = await _feedCache.GetCachedFeedAsync(userId, cursor, clampedLimit);
 
-			var entries = await db.SortedSetRangeByScoreWithScoresAsync(
-				key,
-				start: double.NegativeInfinity,
-				stop: maxScore,
-				order: Order.Descending,
-				take: clampedLimit);
-
-			if (entries.Length == 0)
+			if (postIds.Count == 0)
 			{
-				if (cursor == null)
-				{
-					return await GetFeedAsync(userId, new FeedRequest
-					{
-						Cursor = null,
-						Limit = clampedLimit
-					});
-				}
-
+				if (cursor == null) return await GetFeedAsync(userId, new FeedRequest { Cursor = null, Limit = clampedLimit });
 				return new FeedResponse { Posts = [], NextCursor = null };
 			}
 
-			// Batch fetch posts preserving Redis order
-			var postIds = entries.Select(e => Guid.Parse((string)e.Element!)).ToList();
-			var posts = await _appDbContext.Posts
-				.Where(p => postIds.Contains(p.Id))
-				.ToListAsync();
-
-			var postMap = posts.ToDictionary(p => p.Id);
-			var orderedPosts = postIds
-				.Where(id => postMap.ContainsKey(id))
-				.Select(id => postMap[id])
-				.ToList();
-
-			var postDtos = await EnrichPostsAsync(orderedPosts, userId);
-
-			return new FeedResponse
-			{
-				Posts = postDtos,
-				NextCursor = entries.Length == clampedLimit
-					? entries.Last().Score.ToString()
-					: null
-			};
-		}
-
-	private async Task<List<PostDto>> EnrichPostsAsync(List<Post> posts, Guid? currentUserId = null)
-		{
-			if (posts.Count == 0)
-			{
-				return [];
-			}
-
-			var postIds = posts.Select(p => p.Id).ToList();
-			var authorIds = posts.Select(p => p.AuthorId).Distinct().ToList();
-
-			var authors = await _userManager.Users
-				.Where(u => authorIds.Contains(u.Id))
-				.ToDictionaryAsync(u => u.Id, u => u.UserName!);
-
-			var likeCounts = await _appDbContext.Likes
-				.Where(l => postIds.Contains(l.PostId))
-				.GroupBy(l => l.PostId)
-				.Select(group => new { PostId = group.Key, Count = group.Count() })
-				.ToDictionaryAsync(x => x.PostId, x => x.Count);
-
-			var commentCounts = await _appDbContext.Comments
-				.Where(c => postIds.Contains(c.PostId))
-				.GroupBy(c => c.PostId)
-				.Select(group => new { PostId = group.Key, Count = group.Count() })
-				.ToDictionaryAsync(x => x.PostId, x => x.Count);
-
-			HashSet<Guid> likedPostIds = [];
-			HashSet<Guid> bookmarkedPostIds = [];
-			if (currentUserId.HasValue)
-			{
-				likedPostIds = (await _appDbContext.Likes
-					.Where(l => l.UserId == currentUserId.Value && postIds.Contains(l.PostId))
-					.Select(l => l.PostId)
-					.ToListAsync())
-					.ToHashSet();
-
-				bookmarkedPostIds = (await _appDbContext.Bookmarks
-					.Where(b => b.UserId == currentUserId.Value && postIds.Contains(b.PostId))
-					.Select(b => b.PostId)
-					.ToListAsync())
-					.ToHashSet();
-			}
-
-			return posts.Select(p => new PostDto
-			{
-				Id = p.Id,
-				AuthorId = p.AuthorId,
-				AuthorUsername = authors.GetValueOrDefault(p.AuthorId, "Unknown"),
-				Text = p.Text,
-				MediaUrl = p.MediaUrl,
-				LikesCount = likeCounts.GetValueOrDefault(p.Id, 0),
-				CommentsCount = commentCounts.GetValueOrDefault(p.Id, 0),
-				IsLikedByCurrentUser = likedPostIds.Contains(p.Id),
-				IsBookmarkedByCurrentUser = bookmarkedPostIds.Contains(p.Id),
-				CreatedAt = p.CreatedAt
-			}).ToList();
-		}
-
-		public async Task BackfillFolloweeFeedAsync(Guid followerId, Guid followeeId)
-		{
-			// Get the followee's most recent 500 posts
-			var posts = await _appDbContext.Posts
-				.Where(p => p.AuthorId == followeeId)
-				.OrderByDescending(p => p.CreatedAt)
-				.Take(500)
-				.ToListAsync();
-
-			if (posts.Count == 0) return;
-
-			var db = _redis.GetDatabase();
-			var key = $"feed:{followerId}";
-
-			foreach (var post in posts)
-			{
-				var score = (double)((DateTimeOffset)post.CreatedAt).ToUnixTimeMilliseconds();
-				await db.SortedSetAddAsync(key, post.Id.ToString(), score);
-			}
-
-			// Cap at 500 and refresh expiry
-			await db.SortedSetRemoveRangeByRankAsync(key, 0, -501);
-			await db.KeyExpireAsync(key, TimeSpan.FromDays(7));
-		}
-
-		public async Task InvalidateFeedCacheAsync(Guid userId)
-		{
-			var db = _redis.GetDatabase();
-			await db.KeyDeleteAsync($"feed:{userId}");
-		}
-
-		public async Task<int> GetNewPostsCountAsync(Guid userId, DateTime since)
-		{
-			var followeeIds = await _appDbContext.Follows
-				.Where(f => f.FollowerId == userId)
-				.Select(f => f.FolloweeId)
-				.ToListAsync();
-
-			followeeIds.Add(userId);
-
-			return await _appDbContext.Posts
-				.Where(p => followeeIds.Contains(p.AuthorId) && p.CreatedAt > since)
-				.CountAsync();
-		}
-
-		public async Task<List<TrendingTopicDto>> GetTrendingTopicsAsync(Guid userId, int limit = 8, int hours = 72)
-		{
-			var clampedLimit = Math.Clamp(limit, 1, 20);
-			var from = DateTime.UtcNow.AddHours(-Math.Clamp(hours, 1, 168));
-
-			var followeeIds = await _appDbContext.Follows
-				.Where(f => f.FollowerId == userId)
-				.Select(f => f.FolloweeId)
-				.ToListAsync();
-			followeeIds.Add(userId);
-
-			var texts = await _appDbContext.Posts
-				.Where(p => followeeIds.Contains(p.AuthorId) && p.CreatedAt >= from)
-				.OrderByDescending(p => p.CreatedAt)
-				.Select(p => p.Text)
-				.Take(3000)
-				.ToListAsync();
-
-			var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-			foreach (var text in texts)
-			{
-				if (string.IsNullOrWhiteSpace(text)) continue;
-				var matches = Regex.Matches(text, @"#([A-Za-z0-9_]{2,50})");
-				foreach (Match match in matches)
-				{
-					var tag = "#" + match.Groups[1].Value;
-					counts[tag] = counts.TryGetValue(tag, out var current) ? current + 1 : 1;
-				}
-			}
-
-			return counts
-				.OrderByDescending(kvp => kvp.Value)
-				.ThenBy(kvp => kvp.Key)
-				.Take(clampedLimit)
-				.Select(kvp => new TrendingTopicDto { Hashtag = kvp.Key, Mentions = kvp.Value })
-				.ToList();
-		}
-
-		public async Task<bool> ToggleBookmarkAsync(Guid userId, Guid postId, bool shouldBookmark)
-		{
-			var exists = await _appDbContext.Bookmarks.AnyAsync(b => b.UserId == userId && b.PostId == postId);
-			if (shouldBookmark)
-			{
-				if (exists) return true;
-				var postExists = await _appDbContext.Posts.AnyAsync(p => p.Id == postId);
-				if (!postExists) throw new KeyNotFoundException("Post not found.");
-
-				_appDbContext.Bookmarks.Add(new Bookmark
-				{
-					UserId = userId,
-					PostId = postId,
-					CreatedAt = DateTime.UtcNow,
-				});
-				await _appDbContext.SaveChangesAsync();
-				return true;
-			}
-
-			if (!exists) return false;
-			var bookmark = await _appDbContext.Bookmarks.FindAsync(userId, postId);
-			if (bookmark is not null)
-			{
-				_appDbContext.Bookmarks.Remove(bookmark);
-				await _appDbContext.SaveChangesAsync();
-			}
-			return false;
-		}
-
-		public async Task<FeedResponse> GetBookmarkedPostsAsync(Guid userId, string? cursor, int limit)
-		{
-			var clampedLimit = Math.Clamp(limit, 1, 50);
-			var query = _appDbContext.Bookmarks
-				.Where(b => b.UserId == userId);
-
-			if (!string.IsNullOrWhiteSpace(cursor) && DateTime.TryParse(cursor, out var cursorDate))
-			{
-				query = query.Where(b => b.CreatedAt < cursorDate);
-			}
-
-			var bookmarkRows = await query
-				.OrderByDescending(b => b.CreatedAt)
-				.Take(clampedLimit)
-				.ToListAsync();
-
-			var postIds = bookmarkRows.Select(b => b.PostId).ToList();
-			var posts = await _appDbContext.Posts
-				.Where(p => postIds.Contains(p.Id))
-				.ToListAsync();
+			var posts = await _postRepository.GetPostsByIdsAsync(postIds);
 
 			var postMap = posts.ToDictionary(p => p.Id);
 			var orderedPosts = postIds.Where(postMap.ContainsKey).Select(id => postMap[id]).ToList();
@@ -396,43 +132,124 @@ namespace SocialPluse.Services
 			return new FeedResponse
 			{
 				Posts = postDtos,
-				NextCursor = bookmarkRows.Count == clampedLimit
-					? bookmarkRows.Last().CreatedAt.ToString("O")
-					: null,
+				NextCursor = nextCursor
+			};
+		}
+
+		private async Task<List<PostDto>> EnrichPostsAsync(List<Post> posts, Guid? currentUserId = null)
+		{
+			if (posts.Count == 0) return [];
+
+			var postIds = posts.Select(p => p.Id).ToList();
+			var authorIds = posts.Select(p => p.AuthorId).Distinct().ToList();
+
+			var authorUsernames = await _userRepository.GetUsernamesAsync(authorIds);
+
+			var likeCounts = await _postRepository.GetLikeCountsAsync(postIds);
+			var commentCounts = await _postRepository.GetCommentCountsAsync(postIds);
+
+			HashSet<Guid> likedPostIds = [];
+			HashSet<Guid> bookmarkedPostIds = [];
+			if (currentUserId.HasValue)
+			{
+				likedPostIds = await _postRepository.GetLikedPostIdsAsync(currentUserId.Value, postIds);
+				bookmarkedPostIds = await _postRepository.GetBookmarkedPostIdsAsync(currentUserId.Value, postIds);
+			}
+
+			return posts.Select(p => p.ToDto(
+				 authorUsernames.GetValueOrDefault(p.AuthorId, "Unknown"),
+					likeCounts.GetValueOrDefault(p.Id, 0),
+				 commentCounts.GetValueOrDefault(p.Id, 0),
+					  likedPostIds.Contains(p.Id),
+				  bookmarkedPostIds.Contains(p.Id)
+					)).ToList();
+		}
+
+		public async Task BackfillFolloweeFeedAsync(Guid followerId, Guid followeeId)
+		{
+			var posts = await _postRepository.GetRecentPostsByAuthorAsync(followeeId, 500);
+			if (posts.Count == 0) return;
+
+			var postsWithScores = posts.Select(p => (p.Id, (double)((DateTimeOffset)p.CreatedAt).ToUnixTimeMilliseconds()));
+
+			await _feedCache.AddPostsToFeedAsync(followerId, postsWithScores);
+		}
+
+		public async Task InvalidateFeedCacheAsync(Guid userId)
+		{
+			await _feedCache.InvalidateFeedCacheAsync(userId);
+		}
+
+		public async Task<int> GetNewPostsCountAsync(Guid userId, DateTime since)
+		{
+			return await _postRepository.GetNewPostsCountAsync(userId, since);
+		}
+
+		public async Task<List<TrendingTopicDto>> GetTrendingTopicsAsync(Guid userId, int limit = 8, int hours = 72)
+		{
+			var clampedLimit = Math.Clamp(limit, 1, 20);
+			var from = DateTime.UtcNow.AddHours(-Math.Clamp(hours, 1, 168));
+
+			var postTexts = await _postRepository.GetRecentPostTextsAsync(userId, from, 3000);
+			var hashtagCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+			foreach (var text in postTexts)
+			{
+				if (string.IsNullOrWhiteSpace(text)) continue;
+				var matches = Regex.Matches(text, @"#([A-Za-z0-9_]{2,50})");
+				foreach (Match match in matches)
+				{
+					var tag = "#" + match.Groups[1].Value;
+					hashtagCounts[tag] = hashtagCounts.TryGetValue(tag, out var current) ? current + 1 : 1;
+				}
+			}
+
+			return hashtagCounts.OrderByDescending(kvp => kvp.Value).ThenBy(kvp => kvp.Key).Take(clampedLimit)
+				.Select(kvp => new TrendingTopicDto { Hashtag = kvp.Key, Mentions = kvp.Value }).ToList();
+		}
+
+		public async Task<bool> ToggleBookmarkAsync(Guid userId, Guid postId, bool shouldBookmark)
+		{
+			var bookmarkExists = await _postRepository.BookmarkExistsAsync(userId, postId);
+			if (shouldBookmark)
+			{
+				if (bookmarkExists) return true;
+				if (!await _postRepository.PostExistsAsync(postId)) throw new KeyNotFoundException("Post not found.");
+
+				await _postRepository.AddBookmarkAsync(userId, postId);
+				await _postRepository.SaveChangesAsync();
+				return true;
+			}
+
+			if (!bookmarkExists) return false;
+			await _postRepository.RemoveBookmarkAsync(userId, postId);
+			await _postRepository.SaveChangesAsync();
+			return false;
+		}
+
+		public async Task<FeedResponse> GetBookmarkedPostsAsync(Guid userId, string? cursor, int limit)
+		{
+			var clampedLimit = Math.Clamp(limit, 1, 50);
+			DateTime? cursorDate = !string.IsNullOrWhiteSpace(cursor) && DateTime.TryParse(cursor, out var cd) ? cd : null;
+
+			var bookmarkRows = await _postRepository.GetBookmarksAsync(userId, cursorDate, clampedLimit);
+			var postIds = bookmarkRows.Select(b => b.PostId).ToList();
+			var posts = await _postRepository.GetPostsByIdsAsync(postIds);
+
+			var postMap = posts.ToDictionary(p => p.Id);
+			var orderedPosts = postIds.Where(postMap.ContainsKey).Select(id => postMap[id]).ToList();
+			var postDtos = await EnrichPostsAsync(orderedPosts, userId);
+
+			return new FeedResponse
+			{
+				Posts = postDtos,
+				NextCursor = bookmarkRows.Count == clampedLimit ? bookmarkRows.Last().CreatedAt.ToString("O") : null,
 			};
 		}
 
 		public async Task<UserAnalyticsDto> GetUserAnalyticsAsync(Guid userId)
 		{
-			var postsCount = await _appDbContext.Posts.CountAsync(p => p.AuthorId == userId);
-			var followersCount = await _appDbContext.Follows.CountAsync(f => f.FolloweeId == userId);
-			var followingCount = await _appDbContext.Follows.CountAsync(f => f.FollowerId == userId);
-			var bookmarksCount = await _appDbContext.Bookmarks.CountAsync(b => b.UserId == userId);
-			var unreadNotifications = await _appDbContext.Notifications.CountAsync(n => n.RecipientUserId == userId && !n.IsRead);
-
-			var myPostIds = await _appDbContext.Posts
-				.Where(p => p.AuthorId == userId)
-				.Select(p => p.Id)
-				.ToListAsync();
-
-			var likesReceived = 0;
-			var commentsReceived = 0;
-			if (myPostIds.Count > 0)
-			{
-				likesReceived = await _appDbContext.Likes.CountAsync(l => myPostIds.Contains(l.PostId));
-				commentsReceived = await _appDbContext.Comments.CountAsync(c => myPostIds.Contains(c.PostId));
-			}
-
-			return new UserAnalyticsDto
-			{
-				PostsCount = postsCount,
-				FollowersCount = followersCount,
-				FollowingCount = followingCount,
-				LikesReceived = likesReceived,
-				CommentsReceived = commentsReceived,
-				BookmarksCount = bookmarksCount,
-				UnreadNotifications = unreadNotifications,
-			};
+			return await _postRepository.GetUserAnalyticsAsync(userId);
 		}
 	}
 }

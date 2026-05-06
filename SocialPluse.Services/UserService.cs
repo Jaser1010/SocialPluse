@@ -2,7 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using SocialPluse.Persistence.DbContexts;
 using SocialPluse.Persistence.IdentityData.Entities;
-using SocialPluse.Services.Abstraction;
+using SocialPluse.Services.Abstraction.IService;
 using SocialPluse.Shared.DTOs.Users;
 
 
@@ -116,6 +116,28 @@ namespace SocialPluse.Services
 				var errors = string.Join("; ", result.Errors.Select(e => e.Description));
 				throw new InvalidOperationException($"Failed to change password: {errors}");
 			}
+		}
+
+
+
+
+		public async Task<bool> UserExistsAsync(Guid userId)
+		{
+			return await _userManager.Users.AnyAsync(u => u.Id == userId);
+		}
+
+		public async Task<string?> GetUsernameAsync(Guid userId)
+		{
+			var user = await _userManager.FindByIdAsync(userId.ToString());
+			return user?.UserName;
+		}
+
+		public async Task<Dictionary<Guid, string>> GetUsernamesAsync(IEnumerable<Guid> userIds)
+		{
+			var idsList = userIds.ToList();
+			return await _userManager.Users
+				.Where(u => idsList.Contains(u.Id))
+				.ToDictionaryAsync(u => u.Id, u => u.UserName!);
 		}
 	}
 }

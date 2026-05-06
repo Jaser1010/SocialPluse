@@ -3,12 +3,10 @@ using Microsoft.AspNetCore.SignalR;
 using Scalar.AspNetCore;
 using SocialPluse.Persistence;
 using SocialPluse.Services;
-using SocialPluse.Services.Abstraction;
+using SocialPluse.Services.Abstraction.IService;
 using SocialPluse.Web.Extensions;
 using SocialPluse.Web.Hubs;
 using SocialPluse.Web.Middleware;
-using Hangfire.Dashboard;
-
 
 namespace SocialPluse
 {
@@ -16,23 +14,21 @@ namespace SocialPluse
 	{
 		public static async Task Main(string[] args)
 		{
-
-
-
 			var builder = WebApplication.CreateBuilder(args);
 
+			// --- 1. Service Registrations ---
+			builder.Services.AddPersistence(builder.Configuration);
+			builder.Services.AddServices();
+			builder.Services.AddControllers();
+			builder.Services.AddOpenApi();
+			builder.Services.AddSignalR();
 
+			// Required for building Media URLs in LocalMediaService
+			builder.Services.AddHttpContextAccessor();
 
+			builder.Services.AddScoped<INotificationSender, SignalRNotificationSender>();
+			builder.Services.AddSingleton<IUserIdProvider, SubClaimUserIdProvider>();
 
-			builder.Services.AddPersistence(builder.Configuration); // Add persistence services (e.g., DbContext, Identity)
-			builder.Services.AddServices(); // Add application services (e.g., IUserService, IAuthService)
-			builder.Services.AddControllers(); // Add controllers for API endpoints
-			builder.Services.AddOpenApi(); // Add OpenAPI/Swagger services for API documentation
-			builder.Services.AddSignalR(); // enables SignalR for real-time web functionality
-			builder.Services.AddScoped<INotificationSender, SignalRNotificationSender>(); // DI binding for notification sender using SignalR
-			builder.Services.AddSingleton<IUserIdProvider, SubClaimUserIdProvider>(); // JWT claim mapping for SignalR user identification
-
-			// CORS policy for React frontend
 			builder.Services.AddCors(options =>
 			{
 				options.AddPolicy("AllowFrontend", policy =>
@@ -42,44 +38,40 @@ namespace SocialPluse
 						  .AllowCredentials());
 			});
 
+			var app = builder.Build();
 
+			// --- 2. Middleware Pipeline (Order is Critical) ---
 
-			var app = builder.Build(); // Build the application
+			// ABSOLUTE TOP: Must catch errors from all other middlewares
+			app.UseGlobalExceptionMiddleware();
 
+			app.UseCors("AllowFrontend");
+			app.UseStaticFiles();
 
-
-
-			app.UseCors("AllowFrontend"); // Enable CORS for React frontend
-			app.UseStaticFiles(); // Serve uploaded media under /wwwroot
-			app.UseGlobalExceptionMiddleware();  // Add global exception handling middleware
 			if (!app.Environment.IsDevelopment())
-				app.UseHttpsRedirection(); // Redirect HTTP requests to HTTPS
-			app.UseAuthentication(); // Enable authentication middleware
-			app.UseAuthorization(); // Enable authorization middleware
+				app.UseHttpsRedirection();
 
+			// Identity must come before Authorization[cite: 18]
+			app.UseAuthentication();
+			app.UseAuthorization();
 
+			// --- 3. Feature Endpoints ---
 			app.UseHangfireDashboard("/hangfire", new DashboardOptions
 			{
-				Authorization = []  // allow all — dev only!
+				Authorization = [] // Use proper authorization in production!
 			});
 
-			if (app.Environment.IsDevelopment()) // Only apply migrations and map OpenAPI in development environment
+			if (app.Environment.IsDevelopment())
 			{
-				await app.ApplyMigrationsAsync(); // Apply database migrations at startup
-				app.MapOpenApi(); // Map OpenAPI/Swagger endpoints for API documentation
-				app.MapScalarApiReference(); // Map Scalar API reference for development/testing purposes
-				// app.UseHangfireDashboard("/hangfire"); // dev monitoring UI
+				await app.ApplyMigrationsAsync();
+				app.MapOpenApi();
+				app.MapScalarApiReference();
 			}
 
+			app.MapHub<NotificationHub>("/hubs/notifications");
+			app.MapControllers();
 
-
-
-			app.MapHub<NotificationHub>("/hubs/notifications"); // registers the WebSocket endpoint
-			app.MapControllers(); // Map controller routes
-
-
-
-			app.Run(); // Run the application
+			app.Run();
 		}
 	}
 }

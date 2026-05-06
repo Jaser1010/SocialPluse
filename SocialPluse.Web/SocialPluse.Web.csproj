@@ -24,12 +24,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Controllers\" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\SocialPluse.Persistence\SocialPluse.Persistence.csproj" />
-    <ProjectReference Include="..\SocialPluse.Presentation\SocialPluse.Presentation.csproj" />
     <ProjectReference Include="..\SocialPluse.Services\SocialPluse.Services.csproj" />
   </ItemGroup>
 

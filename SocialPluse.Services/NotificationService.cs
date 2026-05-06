@@ -1,198 +1,148 @@
-﻿	using Microsoft.AspNetCore.Identity;
-	using Microsoft.EntityFrameworkCore;
-	using SocialPluse.Domain.Entities;
-	using SocialPluse.Domain.Enums;
-	using SocialPluse.Persistence.DbContexts;
-	using SocialPluse.Persistence.IdentityData.Entities;
-	using SocialPluse.Services.Abstraction;
-	using SocialPluse.Shared.DTOs.Notifications;
+﻿using SocialPluse.Domain.Entities;
+using SocialPluse.Domain.Enums;
+using SocialPluse.Services.Abstraction.IRepositories;
+using SocialPluse.Services.Abstraction.IService;
+using SocialPluse.Shared.DTOs.Notifications;
+using SocialPluse.Services.Mappers; // ADDED
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
-	namespace SocialPluse.Services
+namespace SocialPluse.Services
+{
+	public class NotificationService : INotificationService
 	{
-		public class NotificationService : INotificationService
+		private readonly INotificationRepository _notificationRepository;
+		private readonly IUserRepository _userRepository;
+		private readonly INotificationSender _notificationSender;
+
+		public NotificationService(
+			INotificationRepository notificationRepository,
+			IUserRepository userRepository,
+			INotificationSender notificationSender)
 		{
-			private readonly AppDbContext _appDbContext;
-			private readonly UserManager<AppUser> _userManager;
-			private readonly INotificationSender _notificationSender;
+			_notificationRepository = notificationRepository;
+			_userRepository = userRepository;
+			_notificationSender = notificationSender;
+		}
 
-			public NotificationService(AppDbContext appDbContext, UserManager<AppUser> userManager, INotificationSender notificationSender)
+		public async Task CreateCommentNotificationAsync(Guid recipientId, Guid actorId, Guid postId, Guid commentId)
+		{
+			var actorUsername = await _userRepository.GetUsernameAsync(actorId);
+
+			var notification = new Notification
 			{
-				_appDbContext = appDbContext;
-				_userManager = userManager;
-				_notificationSender = notificationSender;
-			}
+				Id = Guid.NewGuid(),
+				RecipientUserId = recipientId,
+				ActorUserId = actorId,
+				Type = NotificationType.Comment,
+				PostId = postId,
+				CommentId = commentId,
+				IsRead = false,
+				CreatedAt = DateTime.UtcNow
+			};
 
+			await _notificationRepository.AddAsync(notification);
+			await _notificationRepository.SaveChangesAsync();
 
+			// Senior 1-Liner:
+			await _notificationSender.SendAsync(recipientId, notification.ToDto(actorUsername ?? "Unknown"));
+		}
 
-			public async Task CreateCommentNotificationAsync(Guid recipientId, Guid actorId, Guid postId, Guid commentId)
+		public async Task CreateFollowNotificationAsync(Guid recipientId, Guid actorId)
+		{
+			var actorUsername = await _userRepository.GetUsernameAsync(actorId);
+
+			var notification = new Notification
 			{
-				var actor = await _userManager.FindByIdAsync(actorId.ToString());
+				Id = Guid.NewGuid(),
+				RecipientUserId = recipientId,
+				ActorUserId = actorId,
+				Type = NotificationType.Follow,
+				IsRead = false,
+				CreatedAt = DateTime.UtcNow
+			};
 
-				var notification = new Notification
-				{
-					Id = Guid.NewGuid(),
-					RecipientUserId = recipientId,
-					ActorUserId = actorId,
-					Type = NotificationType.Comment,
-					PostId = postId,
-					CommentId = commentId,
-					IsRead = false,
-					CreatedAt = DateTime.UtcNow
-				};
+			await _notificationRepository.AddAsync(notification);
+			await _notificationRepository.SaveChangesAsync();
 
-				_appDbContext.Notifications.Add(notification);
-				await _appDbContext.SaveChangesAsync();
+			// Senior 1-Liner:
+			await _notificationSender.SendAsync(recipientId, notification.ToDto(actorUsername ?? "Unknown"));
+		}
 
-				await _notificationSender.SendAsync(recipientId, new NotificationDto
-				{
-					Id = notification.Id,
-					ActorUserId = actorId,
-					ActorUsername = actor?.UserName ?? "Unknown",
-					Type = NotificationType.Comment,
-					PostId = postId,
-					CommentId = commentId,
-					IsRead = false,
-					CreatedAt = notification.CreatedAt
-				});
-			}
+		public async Task CreateLikeNotificationAsync(Guid recipientId, Guid actorId, Guid postId)
+		{
+			var actorUsername = await _userRepository.GetUsernameAsync(actorId);
 
-			public async Task CreateFollowNotificationAsync(Guid recipientId, Guid actorId)
+			var notification = new Notification
 			{
-				var actor = await _userManager.FindByIdAsync(actorId.ToString());
+				Id = Guid.NewGuid(),
+				RecipientUserId = recipientId,
+				ActorUserId = actorId,
+				Type = NotificationType.Like,
+				PostId = postId,
+				IsRead = false,
+				CreatedAt = DateTime.UtcNow
+			};
 
-				var notification = new Notification
-				{
-					Id = Guid.NewGuid(),
-					RecipientUserId = recipientId,
-					ActorUserId = actorId,
-					Type = NotificationType.Follow,
-					IsRead = false,
-					CreatedAt = DateTime.UtcNow
-				};
+			await _notificationRepository.AddAsync(notification);
+			await _notificationRepository.SaveChangesAsync();
 
-				_appDbContext.Notifications.Add(notification);
-				await _appDbContext.SaveChangesAsync();
+			// Senior 1-Liner:
+			await _notificationSender.SendAsync(recipientId, notification.ToDto(actorUsername ?? "Unknown"));
+		}
 
-				await _notificationSender.SendAsync(recipientId, new NotificationDto
-				{
-					Id = notification.Id,
-					ActorUserId = actorId,
-					ActorUsername = actor?.UserName ?? "Unknown",
-					Type = NotificationType.Follow,
-					IsRead = false,
-					CreatedAt = notification.CreatedAt
-				});
-			}
-
-			public async Task CreateLikeNotificationAsync(Guid recipientId, Guid actorId, Guid postId)
+		public async Task CreateReportNotificationAsync(Guid recipientId, Guid actorId)
+		{
+			var notification = new Notification
 			{
-				var actor = await _userManager.FindByIdAsync(actorId.ToString());
+				Id = Guid.NewGuid(),
+				RecipientUserId = recipientId,
+				ActorUserId = actorId,
+				Type = NotificationType.Report,
+				IsRead = false,
+				CreatedAt = DateTime.UtcNow
+			};
 
-				var notification = new Notification
-				{
-					Id = Guid.NewGuid(),
-					RecipientUserId = recipientId,
-					ActorUserId = actorId,
-					Type = NotificationType.Like,
-					PostId = postId,
-					IsRead = false,
-					CreatedAt = DateTime.UtcNow
-				};
+			await _notificationRepository.AddAsync(notification);
+			await _notificationRepository.SaveChangesAsync();
 
-				_appDbContext.Notifications.Add(notification);
-				await _appDbContext.SaveChangesAsync();
+			// Senior 1-Liner:
+			await _notificationSender.SendAsync(recipientId, notification.ToDto("Anonymous"));
+		}
 
-				await _notificationSender.SendAsync(recipientId, new NotificationDto
-				{
-					Id = notification.Id,
-					ActorUserId = actorId,
-					ActorUsername = actor?.UserName ?? "Unknown",
-					Type = NotificationType.Like,
-					PostId = postId,
-					IsRead = false,
-					CreatedAt = notification.CreatedAt
-				});
-			}
+		public async Task<NotificationResponse> GetNotificationsAsync(Guid userId, string? cursor, int limit)
+		{
+			var clampedLimit = Math.Clamp(limit, 1, 50);
+			DateTime? cursorDate = cursor != null && DateTime.TryParse(cursor, out var parsedDate) ? parsedDate : null;
 
-			public async Task CreateReportNotificationAsync(Guid recipientId, Guid actorId)
+			var notifications = await _notificationRepository.GetNotificationsAsync(userId, cursorDate, clampedLimit);
+
+			var actorIds = notifications.Select(n => n.ActorUserId).Distinct().ToList();
+			var actors = await _userRepository.GetUsernamesAsync(actorIds);
+
+			return new NotificationResponse
 			{
-				var actor = await _userManager.FindByIdAsync(actorId.ToString());
+				// Senior 1-Liner Array Mapping:
+				Notifications = notifications.Select(n => n.ToDto(
+					n.Type == NotificationType.Report ? "Anonymous" : actors.GetValueOrDefault(n.ActorUserId, "Unknown")
+				)).ToList(),
 
-				var notification = new Notification
-				{
-					Id = Guid.NewGuid(),
-					RecipientUserId = recipientId,
-					ActorUserId = actorId,
-					Type = NotificationType.Report,
-					IsRead = false,
-					CreatedAt = DateTime.UtcNow
-				};
+				NextCursor = notifications.Count == clampedLimit ? notifications.Last().CreatedAt.ToString("O") : null
+			};
+		}
 
-				_appDbContext.Notifications.Add(notification);
-				await _appDbContext.SaveChangesAsync();
+		public async Task MarkAsReadAsync(Guid notificationId, Guid userId)
+		{
+			var notification = await _notificationRepository.GetByIdAsync(notificationId);
+			if (notification == null) throw new KeyNotFoundException($"Notification with ID {notificationId} not found.");
 
-				await _notificationSender.SendAsync(recipientId, new NotificationDto
-				{
-					Id = notification.Id,
-					ActorUserId = actorId,
-					ActorUsername = "Anonymous",
-					Type = NotificationType.Report,
-					IsRead = false,
-					CreatedAt = notification.CreatedAt
-				});
-			}
+			var isRecipient = notification.RecipientUserId == userId;
+			if (!isRecipient) throw new UnauthorizedAccessException("You are not authorized to mark this notification as read.");
 
-			public async Task<NotificationResponse> GetNotificationsAsync(Guid userId, string? cursor, int limit)
-			{
-				var query = _appDbContext.Notifications.Where(n => n.RecipientUserId == userId);
-
-				if (cursor != null && DateTime.TryParse(cursor, out var cursorDate))
-					query = query.Where(n => n.CreatedAt < cursorDate);
-
-				var clampedLimit = Math.Clamp(limit, 1, 50);
-
-				var notifications = await query
-					.OrderByDescending(n => n.CreatedAt)
-					.Take(clampedLimit).ToListAsync<Notification>();
-
-				// Batch fetch actor usernames — same pattern as feed
-				var actorIds = notifications.Select(n => n.ActorUserId).Distinct().ToList();
-				var actors = await _userManager.Users
-					.Where(u => actorIds.Contains(u.Id))
-					.ToDictionaryAsync(u => u.Id, u => u.UserName!);
-
-				return new NotificationResponse
-				{
-					Notifications = notifications.Select(n => new NotificationDto
-					{
-						Id = n.Id,
-						ActorUserId = n.ActorUserId,
-						ActorUsername = n.Type == NotificationType.Report
-							? "Anonymous"
-							: actors.GetValueOrDefault(n.ActorUserId, "Unknown"),
-						Type = n.Type,
-						PostId = n.PostId,
-						CommentId = n.CommentId,
-						IsRead = n.IsRead,
-						CreatedAt = n.CreatedAt
-					}).ToList(),
-
-					NextCursor = notifications.Count == clampedLimit? notifications.Last().CreatedAt.ToString("O"): null
-				};
-			}
-
-			public async Task MarkAsReadAsync(Guid notificationId, Guid userId)
-			{
-				// 1. FindAsync(notificationId) → KeyNotFoundException if null
-				var notification = await _appDbContext.Notifications.FindAsync(notificationId);
-				if (notification == null)	throw new KeyNotFoundException($"Notification with ID {notificationId} not found.");
-				// 2. Check RecipientUserId == userId → UnauthorizedAccessException if not
-				var isRecipient = notification.RecipientUserId == userId;
-				if (!isRecipient) throw new UnauthorizedAccessException("You are not authorized to mark this notification as read.");
-				// 3. Set IsRead = true
-				notification.IsRead = true;
-				// 4. SaveChangesAsync
-				await _appDbContext.SaveChangesAsync();
-			}
+			notification.IsRead = true;
+			await _notificationRepository.SaveChangesAsync();
 		}
 	}
+}

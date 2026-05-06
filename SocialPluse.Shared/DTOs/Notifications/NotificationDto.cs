@@ -1,4 +1,4 @@
-﻿using SocialPluse.Domain.Enums;
+﻿using SocialPluse.Shared.Enums;
 using System;
 using System.Collections.Generic;
 using System.Text;

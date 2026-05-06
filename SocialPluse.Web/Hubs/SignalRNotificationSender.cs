@@ -1,5 +1,5 @@
 ﻿using Microsoft.AspNetCore.SignalR;
-using SocialPluse.Services.Abstraction;
+using SocialPluse.Services.Abstraction.IService;
 using SocialPluse.Shared.DTOs.Notifications;
 
 namespace SocialPluse.Web.Hubs

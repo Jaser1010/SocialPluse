@@ -1,29 +1,32 @@
-﻿using Hangfire;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
-using SocialPluse.Domain.Entities;
-using SocialPluse.Persistence.DbContexts;
-using SocialPluse.Persistence.IdentityData.Entities;
-using SocialPluse.Services.Abstraction;
+﻿using SocialPluse.Domain.Entities;
+using SocialPluse.Services.Abstraction.IRepositories;
+using SocialPluse.Services.Abstraction.IService;
 using SocialPluse.Shared.DTOs.Comments;
+using SocialPluse.Services.Mappers;
+
 namespace SocialPluse.Services
 {
 	public class CommentService : ICommentService
 	{
-		private readonly AppDbContext _appDbContext;
-		private readonly UserManager<AppUser> _userManager;
+		private readonly ICommentRepository _commentRepository;
+		private readonly IUserRepository _userRepository;
+		private readonly IBackgroundJobPublisher _jobPublisher;
 
-		public CommentService(AppDbContext appDbContext, UserManager<AppUser> userManager)
+		public CommentService(
+			ICommentRepository commentRepository,
+			IUserRepository userRepository,
+			IBackgroundJobPublisher jobPublisher)
 		{
-			_appDbContext = appDbContext;
-			_userManager = userManager;
+			_commentRepository = commentRepository;
+			_userRepository = userRepository;
+			_jobPublisher = jobPublisher;
 		}
+
 		public async Task<CommentDto> CreateCommentAsync(Guid authorId, Guid postId, CreateCommentRequest request)
 		{
-			// 1. Check post exists → KeyNotFoundException if null
-			var post = await _appDbContext.Posts.FindAsync(postId);
-			if (post is null) throw new KeyNotFoundException($"Post with id {postId} not found.");
-			// 2. Create and save
+			var postAuthorId = await _commentRepository.GetPostAuthorIdAsync(postId);
+			if (postAuthorId is null) throw new KeyNotFoundException($"Post with id {postId} not found.");
+
 			var comment = new Comment
 			{
 				Id = Guid.NewGuid(),
@@ -32,58 +35,33 @@ namespace SocialPluse.Services
 				Text = request.Text,
 				CreatedAt = DateTime.UtcNow
 			};
-			// 3. Get author username via UserManager
-			var author = await _userManager.FindByIdAsync(authorId.ToString());
 
+			var authorUsername = await _userRepository.GetUsernameAsync(authorId);
 
-			await _appDbContext.Comments.AddAsync(comment);
-			await _appDbContext.SaveChangesAsync();
-			if (post.AuthorId != authorId)
-				BackgroundJob.Enqueue<INotificationService>(s =>
-					s.CreateCommentNotificationAsync(post.AuthorId, authorId, postId, comment.Id));
-			// 4. Return CommentDto
-			return new CommentDto
+			await _commentRepository.AddAsync(comment);
+			await _commentRepository.SaveChangesAsync();
+
+			if (postAuthorId != authorId)
 			{
-				Id = comment.Id,
-				PostId = comment.PostId,
-				AuthorId = comment.AuthorId,
-				AuthorUsername = author?.UserName ?? "Unknown",
-				Text = comment.Text,
-				CreatedAt = comment.CreatedAt
-			};
+				_jobPublisher.EnqueueCommentNotificationJob(postAuthorId.Value, authorId, postId, comment.Id);
+			}
+
+			return comment.ToDto(authorUsername ?? "Unknown");
 		}
 
 		public async Task<CommentFeedResponse> GetCommentsAsync(Guid postId, DateTime? cursor, int limit)
 		{
-			// 1. Build query
-			var query = _appDbContext.Comments.Where(c => c.PostId == postId);
-			if (cursor.HasValue)
-				query = query.Where(c => c.CreatedAt < cursor.Value);
-			// 2. Clamp limit: Math.Clamp(limit, 1, 50)
 			var clampedLimit = Math.Clamp(limit, 1, 50);
-			// 3. Order, take, fetch usernames (same pattern as feed)
-			var comments = await query.OrderByDescending(c => c.CreatedAt)
-				.Take(clampedLimit)
-				.ToListAsync();
-			// Batch fetch usernames
+			var comments = await _commentRepository.GetCommentsAsync(postId, cursor, clampedLimit);
+
 			var authorIds = comments.Select(c => c.AuthorId).Distinct().ToList();
-			var authors = await _userManager.Users
-				.Where(u => authorIds.Contains(u.Id))
-				.ToDictionaryAsync(u => u.Id, u => u.UserName!);
-			// 4. Return CommentFeedResponse with NextCursor
+			var authors = await _userRepository.GetUsernamesAsync(authorIds);
+
 			return new CommentFeedResponse
 			{
-				Comments = comments.Select(c => new CommentDto
-				{
-					Id = c.Id,
-					PostId = c.PostId,
-					AuthorId = c.AuthorId,
-					AuthorUsername = authors.GetValueOrDefault(c.AuthorId, "Unknown"),
-					Text = c.Text,
-					CreatedAt = c.CreatedAt
-				}).ToList(),
+				Comments = comments.Select(c => c.ToDto(authors.GetValueOrDefault(c.AuthorId, "Unknown"))).ToList(),
 				NextCursor = comments.Count == clampedLimit ? comments.Last().CreatedAt : null
 			};
-		}		
+		}
 	}
 }

@@ -8,6 +8,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using SocialPluse.Persistence.DbContexts;
 using SocialPluse.Persistence.IdentityData.Entities;
+using SocialPluse.Persistence.Repositories;
+using SocialPluse.Persistence.Services;
+using SocialPluse.Services.Abstraction.IRepositories;
+using SocialPluse.Services.Abstraction.IService;
 using StackExchange.Redis;
 using System.Text;
 
@@ -17,6 +21,22 @@ namespace SocialPluse.Persistence
 	{
 		public static IServiceCollection AddPersistence(this IServiceCollection services, IConfiguration config)
 		{
+
+
+			services.AddScoped<IMediaService, LocalMediaService>();
+			services.AddScoped<ISearchRepository, SearchRepository>();
+			services.AddScoped<ISafetyRepository, SafetyRepository>();
+			services.AddScoped<INotificationRepository, NotificationRepository>();
+			services.AddScoped<ILikeRepository, LikeRepository>();
+			services.AddScoped<IFeedCacheService, RedisFeedCacheService>();
+			services.AddScoped<IUserRepository, UserRepository>();
+			services.AddScoped<IPostRepository, PostRepository>();
+			services.AddScoped<IBackgroundJobPublisher, HangfireJobPublisher>();
+
+
+
+
+
 			// Database configuration
 			services.AddDbContext<AppDbContext>(options =>
 				options.UseNpgsql(config.GetConnectionString("Postgres")));
