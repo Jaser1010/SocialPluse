@@ -8,7 +8,7 @@ namespace SocialPluse.Domain.Entities
 	public class Post
 	{
 		public Guid Id { get; set; }
-		public Guid AuthorId  { get; set; } // FK => AppUser
+		public Guid AuthorId { get; set; } // FK => AppUser
 		public string Text { get; set; } = default!;
 		public string? MediaUrl { get; set; }
 		public NpgsqlTsVector? SearchVector { get; set; }

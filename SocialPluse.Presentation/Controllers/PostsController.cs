@@ -116,5 +116,55 @@ namespace SocialPluse.Presentation.Controllers
 			var count = await _postService.GetNewPostsCountAsync(userId.Value, sinceDate);
 			return Ok(new { count });
 		}
+
+		[Authorize]
+		[HttpGet("posts/trending")]
+		public async Task<IActionResult> GetTrending([FromQuery] int limit = 8)
+		{
+			var userId = GetUserId();
+			if (userId == null) return Unauthorized();
+			var topics = await _postService.GetTrendingTopicsAsync(userId.Value, limit);
+			return Ok(topics);
+		}
+
+		[Authorize]
+		[HttpPost("posts/{postId:guid}/bookmarks")]
+		public async Task<IActionResult> Bookmark(Guid postId)
+		{
+			var userId = GetUserId();
+			if (userId == null) return Unauthorized();
+			await _postService.ToggleBookmarkAsync(userId.Value, postId, shouldBookmark: true);
+			return NoContent();
+		}
+
+		[Authorize]
+		[HttpDelete("posts/{postId:guid}/bookmarks")]
+		public async Task<IActionResult> Unbookmark(Guid postId)
+		{
+			var userId = GetUserId();
+			if (userId == null) return Unauthorized();
+			await _postService.ToggleBookmarkAsync(userId.Value, postId, shouldBookmark: false);
+			return NoContent();
+		}
+
+		[Authorize]
+		[HttpGet("bookmarks")]
+		public async Task<IActionResult> GetBookmarks([FromQuery] string? cursor, [FromQuery] int limit = 20)
+		{
+			var userId = GetUserId();
+			if (userId == null) return Unauthorized();
+			var result = await _postService.GetBookmarkedPostsAsync(userId.Value, cursor, limit);
+			return Ok(result);
+		}
+
+		[Authorize]
+		[HttpGet("analytics/me")]
+		public async Task<IActionResult> GetMyAnalytics()
+		{
+			var userId = GetUserId();
+			if (userId == null) return Unauthorized();
+			var result = await _postService.GetUserAnalyticsAsync(userId.Value);
+			return Ok(result);
+		}
 	}
 }
