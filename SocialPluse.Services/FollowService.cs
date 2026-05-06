@@ -1,37 +1,41 @@
-using Hangfire;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
 using SocialPluse.Domain.Entities;
-using SocialPluse.Persistence.DbContexts;
-using SocialPluse.Persistence.IdentityData.Entities;
-using SocialPluse.Services.Abstraction;
+using SocialPluse.Services.Abstraction.IRepositories;
+using SocialPluse.Services.Abstraction.IService;
 using SocialPluse.Shared.DTOs.Follows;
-
+using SocialPluse.Services.Mappers;
 
 namespace SocialPluse.Services
 {
 	public class FollowService : IFollowService
 	{
-		private readonly AppDbContext _appDbContext;
-		private readonly UserManager<AppUser> _userManager;
+		private readonly IFollowRepository _followRepository;
+		private readonly IUserRepository _userRepository; // Senior fix: using Repo instead of Service
+		private readonly IBackgroundJobPublisher _jobPublisher;
 
-		public FollowService(AppDbContext appDbContext, UserManager<AppUser> userManager)
+		public FollowService(
+			IFollowRepository followRepository,
+			IUserRepository userRepository,
+			IBackgroundJobPublisher jobPublisher)
 		{
-			_appDbContext = appDbContext;
-			_userManager = userManager;
+			_followRepository = followRepository;
+			_userRepository = userRepository;
+			_jobPublisher = jobPublisher;
 		}
+
 		public async Task<FollowResponse> FollowAsync(Guid followerId, Guid followeeId)
 		{
-			// 1. Check followerId == followeeId ? throw InvalidOperationException("You cannot follow yourself.")
-			if(followerId == followeeId) throw new InvalidOperationException("You cannot follow yourself.");
-			// 2. Check followee exists via UserManager ? throw KeyNotFoundException if not
-			var followee = await _userManager.FindByIdAsync(followeeId.ToString());
-			if (followee == null) throw new KeyNotFoundException("User not found.");
-			// 3. Check already following
-			var existing = await _appDbContext.Follows.FindAsync(followerId, followeeId);
+			if (followerId == followeeId)
+				throw new InvalidOperationException("You cannot follow yourself.");
+
+			// Fast database check
+			var userExists = await _userRepository.UserExistsAsync(followeeId);
+			if (!userExists)
+				throw new KeyNotFoundException("User not found.");
+
+			var existing = await _followRepository.GetFollowAsync(followerId, followeeId);
 			if (existing != null)
 				throw new InvalidOperationException("You are already following this user.");
-			// 4. Create and save
+
 			var follow = new Follow
 			{
 				FollowerId = followerId,
@@ -39,40 +43,30 @@ namespace SocialPluse.Services
 				CreatedAt = DateTime.UtcNow
 			};
 
-			_appDbContext.Follows.Add(follow);
-			await _appDbContext.SaveChangesAsync();
-			BackgroundJob.Enqueue<INotificationService>(s =>
-									s.CreateFollowNotificationAsync(followeeId, followerId));
-			// Backfill the followee's existing posts into the follower's Redis feed
-			BackgroundJob.Enqueue<IPostService>(s =>
-				s.BackfillFolloweeFeedAsync(followerId, followeeId));
+			await _followRepository.AddAsync(follow);
+			await _followRepository.SaveChangesAsync();
 
-			return new FollowResponse
-			{
-				FollowerId = followerId,
-				FolloweeId = followeeId,
-				CreatedAt = follow.CreatedAt
-			};
+			_jobPublisher.EnqueueFollowNotificationJob(followeeId, followerId);
+			_jobPublisher.EnqueueBackfillFeedJob(followerId, followeeId);
+
+			return follow.ToResponse();
 		}
+
 		public async Task UnfollowAsync(Guid followerId, Guid followeeId)
 		{
-			// 1. Find the follow record ? if null throw KeyNotFoundException
-			var follow = await _appDbContext.Follows.FindAsync(followerId, followeeId);
+			var follow = await _followRepository.GetFollowAsync(followerId, followeeId);
 			if (follow == null)
 				throw new KeyNotFoundException("You are not following this user.");
-			// 2. Remove(follow)
-			_appDbContext.Follows.Remove(follow);
-			// 3. SaveChangesAsync()	
-			await _appDbContext.SaveChangesAsync();
-			// Invalidate the follower's Redis feed cache so the next load re-queries the DB
-			BackgroundJob.Enqueue<IPostService>(s =>
-				s.InvalidateFeedCacheAsync(followerId));
+
+			_followRepository.Remove(follow);
+			await _followRepository.SaveChangesAsync();
+
+			_jobPublisher.EnqueueInvalidateFeedCacheJob(followerId);
 		}
 
 		public async Task<bool> IsFollowingAsync(Guid followerId, Guid followeeId)
 		{
-			return await _appDbContext.Follows
-				.AnyAsync(f => f.FollowerId == followerId && f.FolloweeId == followeeId);
+			return await _followRepository.IsFollowingAsync(followerId, followeeId);
 		}
 	}
 }

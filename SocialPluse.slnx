@@ -8,7 +8,6 @@
     <Project Path="SocialPluse.Persistence/SocialPluse.Persistence.csproj" />
   </Folder>
   <Folder Name="/PresentationLayer/">
-    <Project Path="SocialPluse.Presentation/SocialPluse.Presentation.csproj" />
     <Project Path="SocialPluse.Web/SocialPluse.Web.csproj" />
   </Folder>
   <Project Path="docker-compose.dcproj">

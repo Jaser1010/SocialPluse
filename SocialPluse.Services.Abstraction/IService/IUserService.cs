@@ -1,0 +1,19 @@
+﻿using SocialPluse.Shared.DTOs.Users;
+using System;
+using System.Collections.Generic;
+using System.Text;
+
+namespace SocialPluse.Services.Abstraction.IService
+{
+	public interface IUserService
+	{
+		public Task<UserProfileDto> GetCurrentUserAsync(Guid userId);
+		Task<UserProfileDto> GetByUsernameAsync(string username);
+		Task<UserProfileDto> UpdateProfileAsync(Guid userId, UpdateProfileRequest request);
+		Task<List<UserRecommendationDto>> GetRecommendationsAsync(Guid userId, int limit);
+		Task ChangePasswordAsync(Guid userId, ChangePasswordRequest request);
+
+		Task<string?> GetUsernameAsync(Guid userId);
+		Task<Dictionary<Guid, string>> GetUsernamesAsync(IEnumerable<Guid> userIds);
+	}
+}

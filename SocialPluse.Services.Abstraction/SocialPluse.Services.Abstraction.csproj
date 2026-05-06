@@ -7,7 +7,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\SocialPluse.Domain\SocialPluse.Domain.csproj" />
     <ProjectReference Include="..\SocialPluse.Shared\SocialPluse.Shared.csproj" />
   </ItemGroup>
+
+	<ItemGroup>
+		<FrameworkReference Include="Microsoft.AspNetCore.App" />
+	</ItemGroup>
 
 </Project>

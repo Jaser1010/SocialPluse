@@ -9,16 +9,19 @@ namespace SocialPluse.Web.Middleware
 		private readonly ILogger<GlobalExceptionMiddleware> _logger;
 		private readonly IHostEnvironment _environment;
 
-		public GlobalExceptionMiddleware(RequestDelegate next,ILogger<GlobalExceptionMiddleware> logger,IHostEnvironment environment)
+		// PERFORMANCE: Reusing options prevents thousands of allocations under load
+		private static readonly JsonSerializerOptions JsonOptions = new()
+		{
+			PropertyNamingPolicy = JsonNamingPolicy.CamelCase, // standard for Frontend/React
+			WriteIndented = true
+		};
+
+		public GlobalExceptionMiddleware(RequestDelegate next, ILogger<GlobalExceptionMiddleware> logger, IHostEnvironment environment)
 		{
 			_next = next;
 			_logger = logger;
 			_environment = environment;
 		}
-
-
-
-
 
 		public async Task InvokeAsync(HttpContext context)
 		{
@@ -28,59 +31,50 @@ namespace SocialPluse.Web.Middleware
 			}
 			catch (Exception ex)
 			{
-				_logger.LogError(ex,
-					"Unhandled exception occurred. Path: {Path}, Method: {Method}",
-					context.Request.Path,
-					context.Request.Method);
-
+				_logger.LogError(ex, "Unhandled exception on {Method} {Path}", context.Request.Method, context.Request.Path);
 				await HandleExceptionAsync(context, ex, _environment);
 			}
 		}
 
-
-
-
-
-		private static async Task HandleExceptionAsync(HttpContext context,Exception exception,IHostEnvironment environment)
+		private static async Task HandleExceptionAsync(HttpContext context, Exception exception, IHostEnvironment environment)
 		{
 			context.Response.ContentType = "application/json";
 
+			// LOGIC: Map internal exceptions to HTTP status codes
 			var statusCode = exception switch
 			{
-				ArgumentNullException => (int)HttpStatusCode.BadRequest,
-				ArgumentException => (int)HttpStatusCode.BadRequest,
+				ArgumentNullException or ArgumentException => (int)HttpStatusCode.BadRequest,
 				KeyNotFoundException => (int)HttpStatusCode.NotFound,
-				UnauthorizedAccessException => (int)HttpStatusCode.Unauthorized,
+
+				// SENIOR REFINEMENT: Differentiate "Who are you?" (401) from "Not allowed!" (403)
+				UnauthorizedAccessException => context.User.Identity?.IsAuthenticated == true
+					? (int)HttpStatusCode.Forbidden
+					: (int)HttpStatusCode.Unauthorized,
+
+				InvalidOperationException => (int)HttpStatusCode.Conflict, // Perfect for "Already Liked" or "Business Rule" errors
+
 				_ => (int)HttpStatusCode.InternalServerError
 			};
 
 			context.Response.StatusCode = statusCode;
 
+			// SECURITY: Mask sensitive system errors in Production, but show helpful client errors[cite: 17]
+			var message = (statusCode == 500 && !environment.IsDevelopment())
+				? "An unexpected server error occurred."
+				: exception.Message;
+
 			var response = new
 			{
 				success = false,
-				message = environment.IsDevelopment()
-					? exception.Message
-					: "An unexpected error occurred.",
-				exceptionType = environment.IsDevelopment()
-					? exception.GetType().Name
-					: null,
-				stackTrace = environment.IsDevelopment()
-					? exception.StackTrace
-					: null,
+				message,
+				exceptionType = environment.IsDevelopment() ? exception.GetType().Name : null,
+				stackTrace = environment.IsDevelopment() ? exception.StackTrace : null,
 				path = context.Request.Path.Value,
-				statusCode = statusCode
+				statusCode
 			};
 
-			var json = JsonSerializer.Serialize(response, new JsonSerializerOptions
-			{
-				WriteIndented = true
-			});
-
+			var json = JsonSerializer.Serialize(response, JsonOptions);
 			await context.Response.WriteAsync(json);
 		}
-
-
-
 	}
 }

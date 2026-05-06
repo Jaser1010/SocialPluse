@@ -18,6 +18,7 @@
     <ProjectReference Include="..\SocialPluse.Domain\SocialPluse.Domain.csproj" />
     <ProjectReference Include="..\SocialPluse.Persistence\SocialPluse.Persistence.csproj" />
     <ProjectReference Include="..\SocialPluse.Services.Abstraction\SocialPluse.Services.Abstraction.csproj" />
+    <ProjectReference Include="..\SocialPluse.Shared\SocialPluse.Shared.csproj" />
   </ItemGroup>
 
 </Project>

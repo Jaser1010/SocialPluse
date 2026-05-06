@@ -1,5 +1,5 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
-using SocialPluse.Services.Abstraction;
+using SocialPluse.Services.Abstraction.IService;
 
 namespace SocialPluse.Services
 {
