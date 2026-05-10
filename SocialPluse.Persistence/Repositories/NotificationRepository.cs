@@ -21,10 +21,10 @@ namespace SocialPluse.Persistence.Repositories
 
 		public async Task<List<Notification>> GetNotificationsAsync(Guid userId, DateTime? cursor, int limit)
 		{
-			var query = _context.Notifications.Where(n => n.RecipientUserId == userId);
+			var query = _context.Notifications.AsNoTracking().Where(n => n.RecipientUserId == userId);
 
 			if (cursor.HasValue)
-				query = query.AsNoTracking().Where(n => n.CreatedAt < cursor.Value);
+				query = query.Where(n => n.CreatedAt < cursor.Value);
 
 			return await query
 				.OrderByDescending(n => n.CreatedAt)

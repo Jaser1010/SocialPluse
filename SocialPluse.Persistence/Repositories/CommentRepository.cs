@@ -41,11 +41,11 @@ namespace SocialPluse.Persistence.Repositories
 
 		public async Task<List<Comment>> GetCommentsAsync(Guid postId, DateTime? cursor, int limit)
 		{
-			var query = _context.Comments.Where(c => c.PostId == postId);
+			var query = _context.Comments.AsNoTracking().Where(c => c.PostId == postId);
 
 			if (cursor.HasValue)
 			{
-				query = query.AsNoTracking().Where(c => c.CreatedAt < cursor.Value);
+				query = query.Where(c => c.CreatedAt < cursor.Value);
 			}
 
 			return await query

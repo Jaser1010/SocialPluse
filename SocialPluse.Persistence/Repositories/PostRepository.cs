@@ -133,7 +133,7 @@ namespace SocialPluse.Persistence.Repositories
 			var bookmarksCount = await _context.Bookmarks.CountAsync(b => b.UserId == userId);
 			var unreadNotifications = await _context.Notifications.CountAsync(n => n.RecipientUserId == userId && !n.IsRead);
 
-			var myPostIds = await _context.Posts.Where(p => p.AuthorId == userId).Select(p => p.Id).ToListAsync();
+			var myPostIds = await _context.Posts.AsNoTracking().Where(p => p.AuthorId == userId).Select(p => p.Id).ToListAsync();
 
 			var likesReceived = myPostIds.Count > 0 ? await _context.Likes.CountAsync(l => myPostIds.Contains(l.PostId)) : 0;
 			var commentsReceived = myPostIds.Count > 0 ? await _context.Comments.CountAsync(c => myPostIds.Contains(c.PostId)) : 0;
