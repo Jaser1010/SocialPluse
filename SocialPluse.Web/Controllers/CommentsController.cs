@@ -28,17 +28,11 @@ namespace SocialPluse.Web.Controllers
 		}
 
 		[HttpGet]
-		public async Task<IActionResult> GetComments(Guid postId, [FromQuery] DateTime? cursor, [FromQuery] int limit = 20)
+		[HttpGet]
+		public async Task<IActionResult> GetComments(Guid postId,[FromQuery] string? cursor,[FromQuery] int limit = 20)
 		{
-			try
-			{
-				var result = await _commentService.GetCommentsAsync(postId, cursor, limit);
-				return Ok(result);
-			}
-			catch (KeyNotFoundException ex)
-			{
-				return NotFound(new { message = ex.Message });
-			}
+			var result = await _commentService.GetCommentsAsync(postId, cursor, limit);
+			return Ok(result);
 		}
 	}
 }

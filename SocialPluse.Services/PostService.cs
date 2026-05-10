@@ -83,10 +83,13 @@ namespace SocialPluse.Services
 		public async Task<FeedResponse> GetFeedAsync(Guid userId, FeedRequest request)
 		{
 			var pageSize = Math.Clamp(request.Limit, 1, 50);
-			DateTime? cursorDate = request.Cursor != null && 
-							DateTime.TryParse(request.Cursor, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var cd)
-							? cd
-							: null;
+			DateTime? cursorDate = null;
+
+			// Unify cursor parsing to handle Unix Milliseconds
+			if (request.Cursor != null && double.TryParse(request.Cursor, NumberStyles.Any, CultureInfo.InvariantCulture, out double ms))
+			{
+				cursorDate = DateTimeOffset.FromUnixTimeMilliseconds((long)ms).UtcDateTime;
+			}
 
 			var posts = await _postRepository.GetFeedPostsAsync(userId, cursorDate, pageSize);
 			var postDtos = await EnrichPostsAsync(posts, userId);
@@ -94,8 +97,9 @@ namespace SocialPluse.Services
 			return new FeedResponse
 			{
 				Posts = postDtos,
+				// Return cursor as Unix Milliseconds string
 				NextCursor = posts.Count == pageSize
-							? posts.Last().CreatedAt.ToString("O", CultureInfo.InvariantCulture)
+							? ((DateTimeOffset)posts.Last().CreatedAt).ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture)
 							: null
 			};
 		}
@@ -117,17 +121,15 @@ namespace SocialPluse.Services
 		public async Task<FeedResponse> GetFeedFromCacheAsync(Guid userId, string? cursor, int limit)
 		{
 			var clampedLimit = Math.Clamp(limit, 1, 50);
-
 			var (postIds, nextCursor) = await _feedCache.GetCachedFeedAsync(userId, cursor, clampedLimit);
 
+			// Remove the "Cliff." If Redis returns nothing, ask the Database.
 			if (postIds.Count == 0)
 			{
-				if (cursor == null) return await GetFeedAsync(userId, new FeedRequest { Cursor = null, Limit = clampedLimit });
-				return new FeedResponse { Posts = [], NextCursor = null };
+				return await GetFeedAsync(userId, new FeedRequest { Cursor = cursor, Limit = clampedLimit });
 			}
 
 			var posts = await _postRepository.GetPostsByIdsAsync(postIds);
-
 			var postMap = posts.ToDictionary(p => p.Id);
 			var orderedPosts = postIds.Where(postMap.ContainsKey).Select(id => postMap[id]).ToList();
 			var postDtos = await EnrichPostsAsync(orderedPosts, userId);

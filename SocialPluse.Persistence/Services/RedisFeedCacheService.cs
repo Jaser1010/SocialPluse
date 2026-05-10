@@ -48,6 +48,8 @@ namespace SocialPluse.Persistence.Services
 		{
 			var db = _redis.GetDatabase();
 			var key = $"feed:{userId}";
+
+			// Parse the Unix ms cursor
 			double maxScore = cursor != null
 					? double.Parse(cursor, CultureInfo.InvariantCulture) - 1
 					: double.MaxValue;
@@ -59,12 +61,11 @@ namespace SocialPluse.Persistence.Services
 				order: Order.Descending,
 				take: limit);
 
-			if (feedEntries.Length == 0)
-			{
-				return (new List<Guid>(), null);
-			}
+			if (feedEntries.Length == 0) return (new List<Guid>(), null);
 
 			var postIds = feedEntries.Select(e => Guid.Parse((string)e.Element!)).ToList();
+
+			// "R" format ensures the score can be parsed back exactly later
 			string? nextCursor = feedEntries.Length == limit
 						? feedEntries.Last().Score.ToString("R", CultureInfo.InvariantCulture)
 						: null;

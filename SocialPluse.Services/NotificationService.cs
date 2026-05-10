@@ -112,25 +112,27 @@ namespace SocialPluse.Services
 		public async Task<NotificationResponse> GetNotificationsAsync(Guid userId, string? cursor, int limit)
 		{
 			var clampedLimit = Math.Clamp(limit, 1, 50);
-			DateTime? cursorDate = cursor != null && 
-						DateTime.TryParse(cursor, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsedDate)
-						? parsedDate
-						: null;
+			DateTime? cursorDate = null;
+
+			// Parse Unix Milliseconds
+			if (cursor != null && double.TryParse(cursor, NumberStyles.Any, CultureInfo.InvariantCulture, out double ms))
+			{
+				cursorDate = DateTimeOffset.FromUnixTimeMilliseconds((long)ms).UtcDateTime;
+			}
 
 			var notifications = await _notificationRepository.GetNotificationsAsync(userId, cursorDate, clampedLimit);
-
 			var actorIds = notifications.Select(n => n.ActorUserId).Distinct().ToList();
 			var actors = await _userRepository.GetUsernamesAsync(actorIds);
 
 			return new NotificationResponse
 			{
-				// Senior 1-Liner Array Mapping:
 				Notifications = notifications.Select(n => n.ToDto(
 					n.Type == NotificationType.Report ? "Anonymous" : actors.GetValueOrDefault(n.ActorUserId, "Unknown")
 				)).ToList(),
 
+				// Standard Unix Millisecond NextCursor
 				NextCursor = notifications.Count == clampedLimit
-							? notifications.Last().CreatedAt.ToString("O", CultureInfo.InvariantCulture)
+							? ((DateTimeOffset)notifications.Last().CreatedAt).ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture)
 							: null
 			};
 		}

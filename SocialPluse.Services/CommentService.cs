@@ -51,10 +51,18 @@ namespace SocialPluse.Services
 			return comment.ToDto(authorUsername ?? "Unknown");
 		}
 
-		public async Task<CommentFeedResponse> GetCommentsAsync(Guid postId, DateTime? cursor, int limit)
+		public async Task<CommentFeedResponse> GetCommentsAsync(Guid postId, string? cursor, int limit)
 		{
 			var clampedLimit = Math.Clamp(limit, 1, 50);
-			var comments = await _commentRepository.GetCommentsAsync(postId, cursor, clampedLimit);
+			DateTime? cursorDate = null;
+
+			// Parse Unix Milliseconds from the string cursor
+			if (cursor != null && double.TryParse(cursor, NumberStyles.Any, CultureInfo.InvariantCulture, out double ms))
+			{
+				cursorDate = DateTimeOffset.FromUnixTimeMilliseconds((long)ms).UtcDateTime;
+			}
+
+			var comments = await _commentRepository.GetCommentsAsync(postId, cursorDate, clampedLimit);
 
 			var authorIds = comments.Select(c => c.AuthorId).Distinct().ToList();
 			var authors = await _userRepository.GetUsernamesAsync(authorIds);
@@ -62,9 +70,10 @@ namespace SocialPluse.Services
 			return new CommentFeedResponse
 			{
 				Comments = comments.Select(c => c.ToDto(authors.GetValueOrDefault(c.AuthorId, "Unknown"))).ToList(),
+				// Return NextCursor as a Unix Milliseconds string
 				NextCursor = comments.Count == clampedLimit
-									? comments.Last().CreatedAt.ToString("O", CultureInfo.InvariantCulture)
-									: null
+							? ((DateTimeOffset)comments.Last().CreatedAt).ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture)
+							: null
 			};
 		}
 	}
