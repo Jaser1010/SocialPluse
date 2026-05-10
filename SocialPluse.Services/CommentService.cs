@@ -1,8 +1,10 @@
-﻿using SocialPluse.Domain.Entities;
+﻿using Microsoft.Extensions.Hosting;
+using SocialPluse.Domain.Entities;
 using SocialPluse.Services.Abstraction.IRepositories;
 using SocialPluse.Services.Abstraction.IService;
-using SocialPluse.Shared.DTOs.Comments;
 using SocialPluse.Services.Mappers;
+using SocialPluse.Shared.DTOs.Comments;
+using System.Globalization;
 
 namespace SocialPluse.Services
 {
@@ -60,7 +62,9 @@ namespace SocialPluse.Services
 			return new CommentFeedResponse
 			{
 				Comments = comments.Select(c => c.ToDto(authors.GetValueOrDefault(c.AuthorId, "Unknown"))).ToList(),
-				NextCursor = comments.Count == clampedLimit ? comments.Last().CreatedAt : null
+				NextCursor = comments.Count == clampedLimit
+									? comments.Last().CreatedAt.ToString("O", CultureInfo.InvariantCulture)
+									: null
 			};
 		}
 	}

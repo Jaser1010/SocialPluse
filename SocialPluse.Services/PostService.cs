@@ -1,13 +1,11 @@
 ﻿using SocialPluse.Domain.Entities;
 using SocialPluse.Services.Abstraction.IRepositories;
 using SocialPluse.Services.Abstraction.IService;
+using SocialPluse.Services.Mappers;
 using SocialPluse.Shared.DTOs.Posts;
 using SocialPluse.Shared.DTOs.Users;
-using System;
-using System.Collections.Generic;
-using System.Linq;
+using System.Globalization;
 using System.Text.RegularExpressions;
-using SocialPluse.Services.Mappers;
 
 namespace SocialPluse.Services
 {
@@ -85,7 +83,10 @@ namespace SocialPluse.Services
 		public async Task<FeedResponse> GetFeedAsync(Guid userId, FeedRequest request)
 		{
 			var pageSize = Math.Clamp(request.Limit, 1, 50);
-			DateTime? cursorDate = request.Cursor != null && DateTime.TryParse(request.Cursor, out var cd) ? cd : null;
+			DateTime? cursorDate = request.Cursor != null && 
+							DateTime.TryParse(request.Cursor, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var cd)
+							? cd
+							: null;
 
 			var posts = await _postRepository.GetFeedPostsAsync(userId, cursorDate, pageSize);
 			var postDtos = await EnrichPostsAsync(posts, userId);
@@ -93,7 +94,9 @@ namespace SocialPluse.Services
 			return new FeedResponse
 			{
 				Posts = postDtos,
-				NextCursor = posts.Count == pageSize ? posts.Last().CreatedAt.ToString("O") : null
+				NextCursor = posts.Count == pageSize
+							? posts.Last().CreatedAt.ToString("O", CultureInfo.InvariantCulture)
+							: null
 			};
 		}
 

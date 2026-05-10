@@ -2,12 +2,9 @@
 using SocialPluse.Domain.Enums;
 using SocialPluse.Services.Abstraction.IRepositories;
 using SocialPluse.Services.Abstraction.IService;
+using SocialPluse.Services.Mappers;
 using SocialPluse.Shared.DTOs.Notifications;
-using SocialPluse.Services.Mappers; // ADDED
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
+using System.Globalization;
 
 namespace SocialPluse.Services
 {
@@ -115,7 +112,10 @@ namespace SocialPluse.Services
 		public async Task<NotificationResponse> GetNotificationsAsync(Guid userId, string? cursor, int limit)
 		{
 			var clampedLimit = Math.Clamp(limit, 1, 50);
-			DateTime? cursorDate = cursor != null && DateTime.TryParse(cursor, out var parsedDate) ? parsedDate : null;
+			DateTime? cursorDate = cursor != null && 
+						DateTime.TryParse(cursor, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsedDate)
+						? parsedDate
+						: null;
 
 			var notifications = await _notificationRepository.GetNotificationsAsync(userId, cursorDate, clampedLimit);
 
@@ -129,7 +129,9 @@ namespace SocialPluse.Services
 					n.Type == NotificationType.Report ? "Anonymous" : actors.GetValueOrDefault(n.ActorUserId, "Unknown")
 				)).ToList(),
 
-				NextCursor = notifications.Count == clampedLimit ? notifications.Last().CreatedAt.ToString("O") : null
+				NextCursor = notifications.Count == clampedLimit
+							? notifications.Last().CreatedAt.ToString("O", CultureInfo.InvariantCulture)
+							: null
 			};
 		}
 

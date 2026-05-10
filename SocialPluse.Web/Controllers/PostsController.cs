@@ -2,7 +2,9 @@
 using Microsoft.AspNetCore.Mvc;
 using SocialPluse.Services.Abstraction.IService;
 using SocialPluse.Shared.DTOs.Posts;
-using SocialPluse.Web.Extensions; // Using your new User.GetUserId() extension
+using SocialPluse.Web.Extensions;
+using System.Globalization;
+
 
 namespace SocialPluse.Web.Controllers
 {
@@ -50,7 +52,7 @@ namespace SocialPluse.Web.Controllers
 		[HttpGet("feed/new")]
 		public async Task<IActionResult> GetNewPostsCount([FromQuery] string? since)
 		{
-			if (!DateTime.TryParse(since, null, System.Globalization.DateTimeStyles.RoundtripKind, out var sinceDate))
+			if (!DateTime.TryParse(since, CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out var sinceDate))
 				sinceDate = DateTime.UtcNow.AddMinutes(-1);
 
 			var count = await _postService.GetNewPostsCountAsync(User.GetUserId(), sinceDate);
