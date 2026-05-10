@@ -2,10 +2,6 @@
 using SocialPluse.Domain.Entities;
 using SocialPluse.Persistence.DbContexts;
 using SocialPluse.Services.Abstraction.IRepositories;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 
 namespace SocialPluse.Persistence.Repositories
 {
@@ -28,7 +24,7 @@ namespace SocialPluse.Persistence.Repositories
 			var query = _context.Notifications.Where(n => n.RecipientUserId == userId);
 
 			if (cursor.HasValue)
-				query = query.Where(n => n.CreatedAt < cursor.Value);
+				query = query.AsNoTracking().Where(n => n.CreatedAt < cursor.Value);
 
 			return await query
 				.OrderByDescending(n => n.CreatedAt)

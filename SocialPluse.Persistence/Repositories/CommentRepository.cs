@@ -45,7 +45,7 @@ namespace SocialPluse.Persistence.Repositories
 
 			if (cursor.HasValue)
 			{
-				query = query.Where(c => c.CreatedAt < cursor.Value);
+				query = query.AsNoTracking().Where(c => c.CreatedAt < cursor.Value);
 			}
 
 			return await query

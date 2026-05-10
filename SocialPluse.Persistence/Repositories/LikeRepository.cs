@@ -2,9 +2,6 @@
 using SocialPluse.Domain.Entities;
 using SocialPluse.Persistence.DbContexts;
 using SocialPluse.Services.Abstraction.IRepositories;
-using System;
-using System.Linq;
-using System.Threading.Tasks;
 
 namespace SocialPluse.Persistence.Repositories
 {

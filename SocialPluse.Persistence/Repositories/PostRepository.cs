@@ -29,7 +29,7 @@ namespace SocialPluse.Persistence.Repositories
 				.ToListAsync();
 
 			followeeIds.Add(userId);
-			var query = _context.Posts.Where(p => followeeIds.Contains(p.AuthorId));
+			var query = _context.Posts.AsNoTracking().Where(p => followeeIds.Contains(p.AuthorId));
 
 			if (cursor.HasValue)
 				query = query.Where(p => p.CreatedAt < cursor.Value);
@@ -39,12 +39,13 @@ namespace SocialPluse.Persistence.Repositories
 
 		public async Task<List<Post>> GetPostsByIdsAsync(IEnumerable<Guid> postIds)
 		{
-			return await _context.Posts.Where(p => postIds.Contains(p.Id)).ToListAsync();
+			return await _context.Posts.AsNoTracking().Where(p => postIds.Contains(p.Id)).ToListAsync();
 		}
 
 		public async Task<List<Post>> GetRecentPostsByAuthorAsync(Guid authorId, int limit)
 		{
 			return await _context.Posts
+				.AsNoTracking()
 				.Where(p => p.AuthorId == authorId)
 				.OrderByDescending(p => p.CreatedAt)
 				.Take(limit)
@@ -119,7 +120,7 @@ namespace SocialPluse.Persistence.Repositories
 
 		public async Task<List<Bookmark>> GetBookmarksAsync(Guid userId, DateTime? cursor, int limit)
 		{
-			var query = _context.Bookmarks.Where(b => b.UserId == userId);
+			var query = _context.Bookmarks.AsNoTracking().Where(b => b.UserId == userId);
 			if (cursor.HasValue) query = query.Where(b => b.CreatedAt < cursor.Value);
 			return await query.OrderByDescending(b => b.CreatedAt).Take(limit).ToListAsync();
 		}
