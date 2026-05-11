@@ -1,6 +1,5 @@
 ﻿using Hangfire;
 using SocialPluse.Services.Abstraction.IService;
-using System;
 
 namespace SocialPluse.Persistence.Services
 {
@@ -15,7 +14,7 @@ namespace SocialPluse.Persistence.Services
 
 		public void EnqueuePostFanoutJob(Guid postId, Guid authorId)
 		{
-			_backgroundJobClient.Enqueue<IPostService>(s => s.FanoutPostToFeedAsync(postId, authorId));
+			_backgroundJobClient.Enqueue<IFeedService>(s => s.FanoutPostToFeedAsync(postId, authorId));
 		}
 
 		public void EnqueueCommentNotificationJob(Guid postAuthorId, Guid commentAuthorId, Guid postId, Guid commentId)
@@ -33,13 +32,13 @@ namespace SocialPluse.Persistence.Services
 
 		public void EnqueueBackfillFeedJob(Guid followerId, Guid followeeId)
 		{
-			_backgroundJobClient.Enqueue<IPostService>(s =>
+			_backgroundJobClient.Enqueue<IFeedService>(s =>
 				s.BackfillFolloweeFeedAsync(followerId, followeeId));
 		}
 
 		public void EnqueueInvalidateFeedCacheJob(Guid userId)
 		{
-			_backgroundJobClient.Enqueue<IPostService>(s =>
+			_backgroundJobClient.Enqueue<IFeedService>(s =>
 				s.InvalidateFeedCacheAsync(userId));
 		}
 

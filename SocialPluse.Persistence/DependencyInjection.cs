@@ -34,6 +34,8 @@ namespace SocialPluse.Persistence
 			services.AddScoped<IBackgroundJobPublisher, HangfireJobPublisher>();
 
 
+			services.AddScoped<IIdentityWrapper, IdentityWrapper>();
+
 
 
 

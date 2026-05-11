@@ -1,7 +1,4 @@
-﻿using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
-using SocialPluse.Persistence.IdentityData.Entities;
-using SocialPluse.Services.Abstraction.IRepositories;
+﻿using SocialPluse.Services.Abstraction.IRepositories;
 using SocialPluse.Services.Abstraction.IService;
 using SocialPluse.Shared.DTOs.Users;
 using SocialPluse.Services.Extensions;
@@ -10,34 +7,33 @@ namespace SocialPluse.Services
 {
 	public class UserService : IUserService
 	{
-		private readonly UserManager<AppUser> _userManager;
+		private readonly IIdentityWrapper _identityWrapper;
 		private readonly IPostRepository _postRepository;
 		private readonly IFollowRepository _followRepository;
 		private readonly IUserRepository _userRepository;
 
 		public UserService(
-			UserManager<AppUser> userManager,
+			IIdentityWrapper identityWrapper,
 			IPostRepository postRepository,
 			IFollowRepository followRepository,
 			IUserRepository userRepository)
 		{
-			_userManager = userManager;
+			_identityWrapper = identityWrapper;
 			_postRepository = postRepository;
 			_followRepository = followRepository;
 			_userRepository = userRepository;
 		}
 
-		private async Task<UserProfileDto> BuildUserProfileDtoAsync(AppUser user)
+		private async Task<UserProfileDto> BuildUserProfileDtoAsync(UserDetailsDto user)
 		{
-			// Use repositories for performance and decoupling
 			var postsCount = await _postRepository.GetPostCountAsync(user.Id);
 			var (followersCount, followingCount) = await _followRepository.GetFollowStatsAsync(user.Id);
 
 			return new UserProfileDto
 			{
 				Id = user.Id.ToString(),
-				Username = user.UserName ?? throw new InvalidOperationException("UserName is missing."),
-				Email = user.Email ?? throw new InvalidOperationException("Email is missing."),
+				Username = user.Username,
+				Email = user.Email,
 				DisplayName = user.DisplayName,
 				Bio = user.Bio,
 				AvatarUrl = user.AvatarUrl,
@@ -50,57 +46,43 @@ namespace SocialPluse.Services
 
 		public async Task<UserProfileDto> GetByUsernameAsync(string username)
 		{
-			var user = await _userManager.FindByNameAsync(username);
+			var user = await _identityWrapper.GetUserByUsernameAsync(username);
 			if (user == null) throw new KeyNotFoundException("User not found.");
 			return await BuildUserProfileDtoAsync(user);
 		}
 
 		public async Task<UserProfileDto> GetCurrentUserAsync(Guid userId)
 		{
-			var user = await _userManager.FindByIdAsync(userId.ToString());
+			var user = await _identityWrapper.GetUserByIdAsync(userId);
 			if (user == null) throw new KeyNotFoundException("User not found.");
 			return await BuildUserProfileDtoAsync(user);
 		}
 
 		public async Task<UserProfileDto> UpdateProfileAsync(Guid userId, UpdateProfileRequest request)
 		{
-			var user = await _userManager.FindByIdAsync(userId.ToString());
-			if (user == null) throw new KeyNotFoundException("User not found.");
+			// Sanitize user-provided text at the service boundary
+			var cleanDisplayName = request.DisplayName?.Sanitize();
+			var cleanBio = request.Bio?.Sanitize();
 
-			// Hardening: Sanitize user-provided text to prevent XSS
-			if (request.DisplayName != null) user.DisplayName = request.DisplayName.Sanitize();
-			if (request.Bio != null) user.Bio = request.Bio.Sanitize();
-			if (request.AvatarUrl != null) user.AvatarUrl = request.AvatarUrl;
+			await _identityWrapper.UpdateProfileAsync(userId, cleanDisplayName, cleanBio, request.AvatarUrl);
 
-			var result = await _userManager.UpdateAsync(user);
-			if (!result.Succeeded)
-			{
-				var errors = string.Join("; ", result.Errors.Select(e => e.Description));
-				throw new InvalidOperationException($"Failed to update profile: {errors}");
-			}
-
-			return await BuildUserProfileDtoAsync(user);
+			var updatedUser = await _identityWrapper.GetUserByIdAsync(userId);
+			return await BuildUserProfileDtoAsync(updatedUser!);
 		}
 
 		public async Task<List<UserRecommendationDto>> GetRecommendationsAsync(Guid userId, int limit)
 		{
 			var clampedLimit = Math.Clamp(limit, 1, 20);
-
-			// 1. Offload complex recommendation logic to the optimized repository
 			var recommendedIds = await _followRepository.GetRecommendedUserIdsAsync(userId, clampedLimit);
 
-			if (recommendedIds.Count == 0) return new List<UserRecommendationDto>();
+			if (recommendedIds.Count == 0) return [];
 
-			// 2. SENIOR FIX: The Batch Query. Fetch all recommended users in ONE database round-trip.
-			var users = await _userManager.Users
-				.Where(u => recommendedIds.Contains(u.Id))
-				.ToListAsync();
+			var users = await _identityWrapper.GetUsersByIdsAsync(recommendedIds);
 
-			// 3. Map to DTOs efficiently in memory
 			return users.Select(user => new UserRecommendationDto
 			{
 				Id = user.Id.ToString(),
-				Username = user.UserName ?? string.Empty,
+				Username = user.Username,
 				DisplayName = user.DisplayName,
 				AvatarUrl = user.AvatarUrl
 			}).ToList();
@@ -111,33 +93,13 @@ namespace SocialPluse.Services
 			if (string.IsNullOrWhiteSpace(request.CurrentPassword) || string.IsNullOrWhiteSpace(request.NewPassword))
 				throw new InvalidOperationException("Current and new password are required.");
 
-			var user = await _userManager.FindByIdAsync(userId.ToString());
-			if (user == null) throw new KeyNotFoundException("User not found.");
-
-			var result = await _userManager.ChangePasswordAsync(user, request.CurrentPassword, request.NewPassword);
-			if (!result.Succeeded)
-			{
-				var errors = string.Join("; ", result.Errors.Select(e => e.Description));
-				throw new InvalidOperationException($"Failed to change password: {errors}");
-			}
+			await _identityWrapper.ChangePasswordAsync(userId, request.CurrentPassword, request.NewPassword);
 		}
 
-		public async Task<bool> UserExistsAsync(Guid userId)
-		{
-			// Efficient lookup via dedicated repository
-			return await _userRepository.UserExistsAsync(userId);
-		}
+		public async Task<bool> UserExistsAsync(Guid userId) => await _userRepository.UserExistsAsync(userId);
 
-		public async Task<string?> GetUsernameAsync(Guid userId)
-		{
-			// Standardized repository access
-			return await _userRepository.GetUsernameAsync(userId);
-		}
+		public async Task<string?> GetUsernameAsync(Guid userId) => await _userRepository.GetUsernameAsync(userId);
 
-		public async Task<Dictionary<Guid, string>> GetUsernamesAsync(IEnumerable<Guid> userIds)
-		{
-			// Batch lookup via repository for optimal performance
-			return await _userRepository.GetUsernamesAsync(userIds);
-		}
+		public async Task<Dictionary<Guid, string>> GetUsernamesAsync(IEnumerable<Guid> userIds) => await _userRepository.GetUsernamesAsync(userIds);
 	}
 }
