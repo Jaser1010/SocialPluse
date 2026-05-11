@@ -154,5 +154,12 @@ namespace SocialPluse.Persistence.Repositories
 
 		public async Task<IDbContextTransaction> BeginTransactionAsync() =>
 				await _context.Database.BeginTransactionAsync();
+
+
+		
+		public async Task<int> GetPostCountAsync(Guid userId)
+		{
+			return await _context.Posts.CountAsync(p => p.AuthorId == userId);
+		}
 	}
 }

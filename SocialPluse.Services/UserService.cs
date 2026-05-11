@@ -1,29 +1,37 @@
 ﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using SocialPluse.Persistence.DbContexts;
 using SocialPluse.Persistence.IdentityData.Entities;
+using SocialPluse.Services.Abstraction.IRepositories;
 using SocialPluse.Services.Abstraction.IService;
 using SocialPluse.Shared.DTOs.Users;
-
+using SocialPluse.Services.Extensions;
 
 namespace SocialPluse.Services
 {
 	public class UserService : IUserService
 	{
 		private readonly UserManager<AppUser> _userManager;
-		private readonly AppDbContext _appDbContext;
+		private readonly IPostRepository _postRepository;
+		private readonly IFollowRepository _followRepository;
+		private readonly IUserRepository _userRepository;
 
-		public UserService(UserManager<AppUser> userManager, AppDbContext appDbContext)
+		public UserService(
+			UserManager<AppUser> userManager,
+			IPostRepository postRepository,
+			IFollowRepository followRepository,
+			IUserRepository userRepository)
 		{
 			_userManager = userManager;
-			_appDbContext = appDbContext;
+			_postRepository = postRepository;
+			_followRepository = followRepository;
+			_userRepository = userRepository;
 		}
 
 		private async Task<UserProfileDto> BuildUserProfileDtoAsync(AppUser user)
 		{
-			var postsCount = await _appDbContext.Posts.CountAsync(p => p.AuthorId == user.Id);
-			var followersCount = await _appDbContext.Follows.CountAsync(f => f.FolloweeId == user.Id);
-			var followingCount = await _appDbContext.Follows.CountAsync(f => f.FollowerId == user.Id);
+			// Use repositories for performance and decoupling
+			var postsCount = await _postRepository.GetPostCountAsync(user.Id);
+			var (followersCount, followingCount) = await _followRepository.GetFollowStatsAsync(user.Id);
 
 			return new UserProfileDto
 			{
@@ -43,34 +51,34 @@ namespace SocialPluse.Services
 		public async Task<UserProfileDto> GetByUsernameAsync(string username)
 		{
 			var user = await _userManager.FindByNameAsync(username);
-			if (user == null)	throw new KeyNotFoundException("User not found.");
+			if (user == null) throw new KeyNotFoundException("User not found.");
 			return await BuildUserProfileDtoAsync(user);
 		}
 
 		public async Task<UserProfileDto> GetCurrentUserAsync(Guid userId)
 		{
 			var user = await _userManager.FindByIdAsync(userId.ToString());
-			if (user == null)	throw new KeyNotFoundException("User not found.");
+			if (user == null) throw new KeyNotFoundException("User not found.");
 			return await BuildUserProfileDtoAsync(user);
 		}
 
 		public async Task<UserProfileDto> UpdateProfileAsync(Guid userId, UpdateProfileRequest request)
 		{
-			// 1. Find user by id 
 			var user = await _userManager.FindByIdAsync(userId.ToString());
 			if (user == null) throw new KeyNotFoundException("User not found.");
-			// 2. Update only non-null fields
-			if (request.DisplayName != null) user.DisplayName = request.DisplayName;
-			if (request.Bio != null) user.Bio = request.Bio;
+
+			// Hardening: Sanitize user-provided text to prevent XSS
+			if (request.DisplayName != null) user.DisplayName = request.DisplayName.Sanitize();
+			if (request.Bio != null) user.Bio = request.Bio.Sanitize();
 			if (request.AvatarUrl != null) user.AvatarUrl = request.AvatarUrl;
-			// 3. Call UpdateAsync(user)
+
 			var result = await _userManager.UpdateAsync(user);
 			if (!result.Succeeded)
 			{
 				var errors = string.Join("; ", result.Errors.Select(e => e.Description));
 				throw new InvalidOperationException($"Failed to update profile: {errors}");
 			}
-			// 4. Return new UserProfileDto { ... }
+
 			return await BuildUserProfileDtoAsync(user);
 		}
 
@@ -78,25 +86,24 @@ namespace SocialPluse.Services
 		{
 			var clampedLimit = Math.Clamp(limit, 1, 20);
 
-			var followedIds = await _appDbContext.Follows
-				.Where(f => f.FollowerId == userId)
-				.Select(f => f.FolloweeId)
-				.ToListAsync();
+			// Offload complex recommendation logic to the optimized repository
+			var recommendedIds = await _followRepository.GetRecommendedUserIdsAsync(userId, clampedLimit);
 
-			followedIds.Add(userId);
-
-			var recommendations = await _userManager.Users
-				.Where(u => !followedIds.Contains(u.Id))
-				.OrderByDescending(u => u.CreatedAt)
-				.Take(clampedLimit)
-				.Select(u => new UserRecommendationDto
+			var recommendations = new List<UserRecommendationDto>();
+			foreach (var id in recommendedIds)
+			{
+				var user = await _userManager.FindByIdAsync(id.ToString());
+				if (user != null)
 				{
-					Id = u.Id.ToString(),
-					Username = u.UserName ?? string.Empty,
-					DisplayName = u.DisplayName,
-					AvatarUrl = u.AvatarUrl
-				})
-				.ToListAsync();
+					recommendations.Add(new UserRecommendationDto
+					{
+						Id = user.Id.ToString(),
+						Username = user.UserName ?? string.Empty,
+						DisplayName = user.DisplayName,
+						AvatarUrl = user.AvatarUrl
+					});
+				}
+			}
 
 			return recommendations;
 		}
@@ -107,8 +114,7 @@ namespace SocialPluse.Services
 				throw new InvalidOperationException("Current and new password are required.");
 
 			var user = await _userManager.FindByIdAsync(userId.ToString());
-			if (user == null)
-				throw new KeyNotFoundException("User not found.");
+			if (user == null) throw new KeyNotFoundException("User not found.");
 
 			var result = await _userManager.ChangePasswordAsync(user, request.CurrentPassword, request.NewPassword);
 			if (!result.Succeeded)
@@ -118,26 +124,22 @@ namespace SocialPluse.Services
 			}
 		}
 
-
-
-
 		public async Task<bool> UserExistsAsync(Guid userId)
 		{
-			return await _userManager.Users.AnyAsync(u => u.Id == userId);
+			// Efficient lookup via dedicated repository
+			return await _userRepository.UserExistsAsync(userId);
 		}
 
 		public async Task<string?> GetUsernameAsync(Guid userId)
 		{
-			var user = await _userManager.FindByIdAsync(userId.ToString());
-			return user?.UserName;
+			// Standardized repository access
+			return await _userRepository.GetUsernameAsync(userId);
 		}
 
 		public async Task<Dictionary<Guid, string>> GetUsernamesAsync(IEnumerable<Guid> userIds)
 		{
-			var idsList = userIds.ToList();
-			return await _userManager.Users
-				.Where(u => idsList.Contains(u.Id))
-				.ToDictionaryAsync(u => u.Id, u => u.UserName!);
+			// Batch lookup via repository for optimal performance
+			return await _userRepository.GetUsernamesAsync(userIds);
 		}
 	}
 }
