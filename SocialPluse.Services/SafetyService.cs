@@ -86,15 +86,22 @@ namespace SocialPluse.Services
 				CreatedAt = DateTime.UtcNow
 			};
 
-			await _safetyRepository.AddReportAsync(report);
-			await _safetyRepository.SaveChangesAsync();
 
-			if (targetType == "user" && request.TargetId != reporterId)
+
+
+			using var transaction = await _safetyRepository.BeginTransactionAsync();
+			try
 			{
-				_jobPublisher.EnqueueReportNotificationJob(request.TargetId, reporterId);
-			}
+				await _safetyRepository.AddReportAsync(report);
+				await _safetyRepository.SaveChangesAsync();
 
-			return report.ToDto();
+				if (targetType == "user" && request.TargetId != reporterId)
+					_jobPublisher.EnqueueReportNotificationJob(request.TargetId, reporterId);
+
+				await transaction.CommitAsync();
+				return report.ToDto();
+			}
+			catch { await transaction.RollbackAsync(); throw; }
 		}
 
 		public async Task<List<ReportDto>> GetMyReportsAsync(Guid reporterId)

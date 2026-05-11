@@ -40,15 +40,22 @@ namespace SocialPluse.Services
 
 			var authorUsername = await _userRepository.GetUsernameAsync(authorId);
 
-			await _commentRepository.AddAsync(comment);
-			await _commentRepository.SaveChangesAsync();
 
-			if (postAuthorId != authorId)
+
+
+			using var transaction = await _commentRepository.BeginTransactionAsync();
+			try
 			{
-				_jobPublisher.EnqueueCommentNotificationJob(postAuthorId.Value, authorId, postId, comment.Id);
-			}
+				await _commentRepository.AddAsync(comment);
+				await _commentRepository.SaveChangesAsync();
 
-			return comment.ToDto(authorUsername ?? "Unknown");
+				if (postAuthorId != authorId)
+					_jobPublisher.EnqueueCommentNotificationJob(postAuthorId.Value, authorId, postId, comment.Id);
+
+				await transaction.CommitAsync();
+				return comment.ToDto(authorUsername ?? "Unknown");
+			}
+			catch { await transaction.RollbackAsync(); throw; }
 		}
 
 		public async Task<CommentFeedResponse> GetCommentsAsync(Guid postId, string? cursor, int limit)

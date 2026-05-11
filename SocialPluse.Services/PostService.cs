@@ -42,25 +42,33 @@ namespace SocialPluse.Services
 				CreatedAt = DateTime.UtcNow
 			};
 
-			await _postRepository.AddAsync(post);
-			var affectedRows = await _postRepository.SaveChangesAsync();
-			if (affectedRows <= 0) throw new InvalidOperationException("Failed to save post to the database.");
+			using var transaction = await _postRepository.BeginTransactionAsync();
 
-			_jobPublisher.EnqueuePostFanoutJob(post.Id, post.AuthorId);
 
-			return new PostDto
+
+			try
 			{
-				Id = post.Id,
-				AuthorId = post.AuthorId,
-				AuthorUsername = username,
-				Text = post.Text,
-				MediaUrl = post.MediaUrl,
-				LikesCount = 0,
-				CommentsCount = 0,
-				IsLikedByCurrentUser = false,
-				IsBookmarkedByCurrentUser = false,
-				CreatedAt = post.CreatedAt
-			};
+				await _postRepository.AddAsync(post);
+				if (await _postRepository.SaveChangesAsync() <= 0)
+					throw new InvalidOperationException("Failed to save post.");
+
+				_jobPublisher.EnqueuePostFanoutJob(post.Id, post.AuthorId);
+
+				await transaction.CommitAsync();
+				return new PostDto {
+					Id = post.Id,
+					AuthorId = post.AuthorId,
+					AuthorUsername = username,
+					Text = post.Text,
+					MediaUrl = post.MediaUrl,
+					LikesCount = 0,
+					CommentsCount = 0,
+					IsLikedByCurrentUser = false,
+					IsBookmarkedByCurrentUser = false,
+					CreatedAt = post.CreatedAt
+				};
+			}
+			catch { await transaction.RollbackAsync(); throw; }
 		}
 
 		public async Task DeletePostAsync(Guid postId, Guid requestingUserId)
@@ -213,23 +221,53 @@ namespace SocialPluse.Services
 				.Select(kvp => new TrendingTopicDto { Hashtag = kvp.Key, Mentions = kvp.Value }).ToList();
 		}
 
+
 		public async Task<bool> ToggleBookmarkAsync(Guid userId, Guid postId, bool shouldBookmark)
 		{
-			var bookmarkExists = await _postRepository.BookmarkExistsAsync(userId, postId);
-			if (shouldBookmark)
+			// Senior Logic: Using a transaction to ensure atomicity and prevent race conditions
+			using var transaction = await _postRepository.BeginTransactionAsync();
+			try
 			{
-				if (bookmarkExists) return true;
-				if (!await _postRepository.PostExistsAsync(postId)) throw new KeyNotFoundException("Post not found.");
+				var bookmarkExists = await _postRepository.BookmarkExistsAsync(userId, postId);
 
-				await _postRepository.AddBookmarkAsync(userId, postId);
+				if (shouldBookmark)
+				{
+					if (bookmarkExists)
+					{
+						await transaction.CommitAsync(); // Exit early if already done
+						return true;
+					}
+
+					// Verify post still exists before creating a relationship
+					if (!await _postRepository.PostExistsAsync(postId))
+						throw new KeyNotFoundException($"Post with ID {postId} not found.");
+
+					await _postRepository.AddBookmarkAsync(userId, postId);
+					await _postRepository.SaveChangesAsync();
+
+					await transaction.CommitAsync();
+					return true;
+				}
+
+				// Logic for removing a bookmark
+				if (!bookmarkExists)
+				{
+					await transaction.CommitAsync();
+					return false;
+				}
+
+				await _postRepository.RemoveBookmarkAsync(userId, postId);
 				await _postRepository.SaveChangesAsync();
-				return true;
-			}
 
-			if (!bookmarkExists) return false;
-			await _postRepository.RemoveBookmarkAsync(userId, postId);
-			await _postRepository.SaveChangesAsync();
-			return false;
+				await transaction.CommitAsync();
+				return false;
+			}
+			catch (Exception)
+			{
+				// If any DB error occurs (like a unique constraint violation), roll back everything
+				await transaction.RollbackAsync();
+				throw;
+			}
 		}
 
 		public async Task<FeedResponse> GetBookmarkedPostsAsync(Guid userId, string? cursor, int limit)
