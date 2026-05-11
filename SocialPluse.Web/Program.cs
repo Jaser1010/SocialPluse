@@ -49,6 +49,7 @@ namespace SocialPluse
 			// --- 2. Middleware Pipeline (Order is Critical) ---
 
 			// ABSOLUTE TOP: Must catch errors from all other middlewares
+			app.UseMiddleware<RequestLogMiddleware>();
 			app.UseGlobalExceptionMiddleware();
 
 			app.UseCors("AllowFrontend");
