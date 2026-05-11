@@ -86,26 +86,24 @@ namespace SocialPluse.Services
 		{
 			var clampedLimit = Math.Clamp(limit, 1, 20);
 
-			// Offload complex recommendation logic to the optimized repository
+			// 1. Offload complex recommendation logic to the optimized repository
 			var recommendedIds = await _followRepository.GetRecommendedUserIdsAsync(userId, clampedLimit);
 
-			var recommendations = new List<UserRecommendationDto>();
-			foreach (var id in recommendedIds)
-			{
-				var user = await _userManager.FindByIdAsync(id.ToString());
-				if (user != null)
-				{
-					recommendations.Add(new UserRecommendationDto
-					{
-						Id = user.Id.ToString(),
-						Username = user.UserName ?? string.Empty,
-						DisplayName = user.DisplayName,
-						AvatarUrl = user.AvatarUrl
-					});
-				}
-			}
+			if (recommendedIds.Count == 0) return new List<UserRecommendationDto>();
 
-			return recommendations;
+			// 2. SENIOR FIX: The Batch Query. Fetch all recommended users in ONE database round-trip.
+			var users = await _userManager.Users
+				.Where(u => recommendedIds.Contains(u.Id))
+				.ToListAsync();
+
+			// 3. Map to DTOs efficiently in memory
+			return users.Select(user => new UserRecommendationDto
+			{
+				Id = user.Id.ToString(),
+				Username = user.UserName ?? string.Empty,
+				DisplayName = user.DisplayName,
+				AvatarUrl = user.AvatarUrl
+			}).ToList();
 		}
 
 		public async Task ChangePasswordAsync(Guid userId, ChangePasswordRequest request)
