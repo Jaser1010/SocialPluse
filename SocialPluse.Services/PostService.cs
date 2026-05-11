@@ -1,6 +1,7 @@
 ﻿using SocialPluse.Domain.Entities;
 using SocialPluse.Services.Abstraction.IRepositories;
 using SocialPluse.Services.Abstraction.IService;
+using SocialPluse.Services.Extensions;
 using SocialPluse.Services.Mappers;
 using SocialPluse.Shared.DTOs.Posts;
 using SocialPluse.Shared.DTOs.Users;
@@ -37,7 +38,7 @@ namespace SocialPluse.Services
 			{
 				Id = Guid.NewGuid(),
 				AuthorId = authorId,
-				Text = createPostRequest.Text,
+				Text = createPostRequest.Text.Sanitize(),
 				MediaUrl = createPostRequest.MediaUrl,
 				CreatedAt = DateTime.UtcNow
 			};
@@ -55,18 +56,7 @@ namespace SocialPluse.Services
 				_jobPublisher.EnqueuePostFanoutJob(post.Id, post.AuthorId);
 
 				await transaction.CommitAsync();
-				return new PostDto {
-					Id = post.Id,
-					AuthorId = post.AuthorId,
-					AuthorUsername = username,
-					Text = post.Text,
-					MediaUrl = post.MediaUrl,
-					LikesCount = 0,
-					CommentsCount = 0,
-					IsLikedByCurrentUser = false,
-					IsBookmarkedByCurrentUser = false,
-					CreatedAt = post.CreatedAt
-				};
+				return post.ToDto(username, 0, 0, false, false);
 			}
 			catch { await transaction.RollbackAsync(); throw; }
 		}
@@ -78,7 +68,8 @@ namespace SocialPluse.Services
 			if (post.AuthorId != requestingUserId) throw new UnauthorizedAccessException("You can only delete your own posts.");
 
 			await _postRepository.DeleteAsync(post);
-			if (await _postRepository.SaveChangesAsync() <= 0) throw new Exception("Failed to delete post.");
+			if (await _postRepository.SaveChangesAsync() <= 0)
+				throw new InvalidOperationException("Failed to delete post.");
 		}
 
 		public async Task<PostDto> GetByIdAsync(Guid postId, Guid? currentUserId = null)
@@ -273,7 +264,12 @@ namespace SocialPluse.Services
 		public async Task<FeedResponse> GetBookmarkedPostsAsync(Guid userId, string? cursor, int limit)
 		{
 			var clampedLimit = Math.Clamp(limit, 1, 50);
-			DateTime? cursorDate = !string.IsNullOrWhiteSpace(cursor) && DateTime.TryParse(cursor, out var cd) ? cd : null;
+			DateTime? cursorDate = null;
+			// Unified Unix MS parsing
+			if (cursor != null && double.TryParse(cursor, NumberStyles.Any, CultureInfo.InvariantCulture, out double ms))
+			{
+				cursorDate = DateTimeOffset.FromUnixTimeMilliseconds((long)ms).UtcDateTime;
+			}
 
 			var bookmarkRows = await _postRepository.GetBookmarksAsync(userId, cursorDate, clampedLimit);
 			var postIds = bookmarkRows.Select(b => b.PostId).ToList();
@@ -286,7 +282,10 @@ namespace SocialPluse.Services
 			return new FeedResponse
 			{
 				Posts = postDtos,
-				NextCursor = bookmarkRows.Count == clampedLimit ? bookmarkRows.Last().CreatedAt.ToString("O") : null,
+				// Unified Unix MS return format
+				NextCursor = bookmarkRows.Count == clampedLimit
+					? ((DateTimeOffset)bookmarkRows.Last().CreatedAt).ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture)
+					: null,
 			};
 		}
 

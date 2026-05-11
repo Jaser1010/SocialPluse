@@ -2,6 +2,7 @@
 using SocialPluse.Domain.Entities;
 using SocialPluse.Services.Abstraction.IRepositories;
 using SocialPluse.Services.Abstraction.IService;
+using SocialPluse.Services.Extensions;
 using SocialPluse.Services.Mappers;
 using SocialPluse.Shared.DTOs.Comments;
 using System.Globalization;
@@ -34,7 +35,7 @@ namespace SocialPluse.Services
 				Id = Guid.NewGuid(),
 				PostId = postId,
 				AuthorId = authorId,
-				Text = request.Text,
+				Text = request.Text.Sanitize(),
 				CreatedAt = DateTime.UtcNow
 			};
 

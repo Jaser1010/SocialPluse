@@ -28,7 +28,6 @@ namespace SocialPluse.Web.Controllers
 		}
 
 		[HttpGet]
-		[HttpGet]
 		public async Task<IActionResult> GetComments(Guid postId,[FromQuery] string? cursor,[FromQuery] int limit = 20)
 		{
 			var result = await _commentService.GetCommentsAsync(postId, cursor, limit);

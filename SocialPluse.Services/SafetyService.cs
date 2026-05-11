@@ -1,8 +1,9 @@
 ﻿using SocialPluse.Domain.Entities;
 using SocialPluse.Services.Abstraction.IRepositories;
 using SocialPluse.Services.Abstraction.IService;
-using SocialPluse.Shared.DTOs.Safety;
+using SocialPluse.Services.Extensions;
 using SocialPluse.Services.Mappers;
+using SocialPluse.Shared.DTOs.Safety;
 
 
 namespace SocialPluse.Services
@@ -68,11 +69,15 @@ namespace SocialPluse.Services
 
 		public async Task<ReportDto> CreateReportAsync(Guid reporterId, CreateReportRequest request)
 		{
+			if (request.TargetType.ToLower() == "user" && request.TargetId == reporterId)
+				throw new InvalidOperationException("You cannot report yourself.");
+
 			var targetType = request.TargetType.ToLower();
 			if (targetType != "user" && targetType != "post")
 				throw new InvalidOperationException("Invalid TargetType. Must be 'user' or 'post'.");
 
-			var reason = request.Reason?.Trim();
+			
+			var reason = request.Reason?.Sanitize();
 			if (string.IsNullOrEmpty(reason)) throw new InvalidOperationException("Reason cannot be empty.");
 
 			var report = new Report
