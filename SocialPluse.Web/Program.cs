@@ -4,6 +4,7 @@ using Hangfire;
 using Microsoft.AspNetCore.SignalR;
 using Scalar.AspNetCore;
 using SocialPluse.Persistence;
+using SocialPluse.Persistence.BackgroundJobs;
 using SocialPluse.Services;
 using SocialPluse.Services.Abstraction.IService;
 using SocialPluse.Shared.Validators;
@@ -44,6 +45,9 @@ namespace SocialPluse
 						  .AllowCredentials());
 			});
 
+			// Start the Outbox Engine here!
+			builder.Services.AddHostedService<OutboxProcessor>();
+
 			var app = builder.Build();
 
 			// --- 2. Middleware Pipeline (Order is Critical) ---
@@ -58,7 +62,7 @@ namespace SocialPluse
 			if (!app.Environment.IsDevelopment())
 				app.UseHttpsRedirection();
 
-			// Identity must come before Authorization[cite: 18]
+			// Identity must come before Authorization
 			app.UseAuthentication();
 			app.UseAuthorization();
 
