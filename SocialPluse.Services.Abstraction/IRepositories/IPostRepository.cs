@@ -39,5 +39,7 @@ namespace SocialPluse.Services.Abstraction.IRepositories
 		Task<UserAnalyticsDto> GetUserAnalyticsAsync(Guid userId);
 
 		Task<IDbContextTransaction> BeginTransactionAsync();
+
+		Task<int> GetPostCountAsync(Guid userId);
 	}
 }

@@ -11,5 +11,9 @@ namespace SocialPluse.Services.Abstraction.IRepositories
 		void Remove(Follow follow);
 		Task<int> SaveChangesAsync();
 		Task<IDbContextTransaction> BeginTransactionAsync();
+
+		Task<(int Followers, int Following)> GetFollowStatsAsync(Guid userId);
+
+		Task<List<Guid>> GetRecommendedUserIdsAsync(Guid userId, int limit);
 	}
 }

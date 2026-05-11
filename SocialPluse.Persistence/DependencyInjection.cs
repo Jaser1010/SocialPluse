@@ -77,32 +77,8 @@ namespace SocialPluse.Persistence
 				// Add event handlers for debugging purposes
 				options.Events = new JwtBearerEvents
 				{
-					OnMessageReceived = context =>
-					{
-						Console.WriteLine($"Authorization Header: {context.Request.Headers.Authorization}");
-						return Task.CompletedTask;
-					},
-					OnAuthenticationFailed = context =>
-					{
-						Console.WriteLine("AUTH FAILED:");
-						Console.WriteLine(context.Exception.ToString());
-						return Task.CompletedTask;
-					},
-					OnChallenge = context =>
-					{
-						Console.WriteLine($"CHALLENGE ERROR: {context.Error}");
-						Console.WriteLine($"CHALLENGE DESCRIPTION: {context.ErrorDescription}");
-						return Task.CompletedTask;
-					},
-					OnTokenValidated = context =>
-					{
-						Console.WriteLine("TOKEN VALIDATED");
-						foreach (var claim in context.Principal!.Claims)
-						{
-							Console.WriteLine($"{claim.Type} = {claim.Value}");
-						}
-						return Task.CompletedTask;
-					}
+					OnTokenValidated = context => Task.CompletedTask,
+					OnAuthenticationFailed = context => Task.CompletedTask
 				};
 			});
 

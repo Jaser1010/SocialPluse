@@ -42,5 +42,27 @@ namespace SocialPluse.Persistence.Repositories
 
 		public async Task<IDbContextTransaction> BeginTransactionAsync() =>
 					await _context.Database.BeginTransactionAsync();
+
+		
+		public async Task<(int Followers, int Following)> GetFollowStatsAsync(Guid userId)
+		{
+			var followers = await _context.Follows.CountAsync(f => f.FolloweeId == userId);
+			var following = await _context.Follows.CountAsync(f => f.FollowerId == userId);
+			return (followers, following);
+		}
+
+		public async Task<List<Guid>> GetRecommendedUserIdsAsync(Guid userId, int limit)
+		{
+			var myFollowing = _context.Follows.Where(f => f.FollowerId == userId).Select(f => f.FolloweeId);
+
+			return await _context.Follows
+				.AsNoTracking()
+				.Where(f => myFollowing.Contains(f.FollowerId) && f.FolloweeId != userId && !myFollowing.Contains(f.FolloweeId))
+				.GroupBy(f => f.FolloweeId)
+				.OrderByDescending(g => g.Count())
+				.Select(g => g.Key)
+				.Take(limit)
+				.ToListAsync();
+		}
 	}
 }

@@ -19,8 +19,8 @@ namespace SocialPluse.Persistence.Repositories
 		{
 			return await _context.Posts
 				.AsNoTracking()
-				.Where(p => EF.Functions.ToTsVector("english", p.Text)
-				.Matches(EF.Functions.WebSearchToTsQuery("english", query)))
+				.Where(p => p.SearchVector != null &&
+							p.SearchVector.Matches(EF.Functions.WebSearchToTsQuery("english", query)))
 				.OrderByDescending(p => p.CreatedAt)
 				.Take(limit)
 				.ToListAsync();
