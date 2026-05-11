@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using SocialPluse.Domain.Entities;
 using SocialPluse.Persistence.DbContexts;
 using SocialPluse.Services.Abstraction.IRepositories;
@@ -34,5 +35,8 @@ namespace SocialPluse.Persistence.Repositories
 		}
 
 		public async Task<int> SaveChangesAsync() => await _context.SaveChangesAsync();
+
+		public async Task<IDbContextTransaction> BeginTransactionAsync() =>
+						await _context.Database.BeginTransactionAsync();
 	}
 }

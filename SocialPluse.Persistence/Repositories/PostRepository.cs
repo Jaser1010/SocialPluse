@@ -1,8 +1,9 @@
-﻿using SocialPluse.Domain.Entities;
+﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using SocialPluse.Domain.Entities;
 using SocialPluse.Persistence.DbContexts;
 using SocialPluse.Services.Abstraction.IRepositories;
 using SocialPluse.Shared.DTOs.Users;
-using Microsoft.EntityFrameworkCore;
 
 namespace SocialPluse.Persistence.Repositories
 {
@@ -149,5 +150,9 @@ namespace SocialPluse.Persistence.Repositories
 				CommentsReceived = commentsReceived
 			};
 		}
+
+
+		public async Task<IDbContextTransaction> BeginTransactionAsync() =>
+				await _context.Database.BeginTransactionAsync();
 	}
 }
