@@ -3,7 +3,7 @@ using SocialPluse.Services.Abstraction.IService;
 
 namespace SocialPluse.Persistence.Services
 {
-	public class HangfireJobPublisher : IBackgroundJobPublisher
+	public class HangfireJobPublisher : OutboxJobPublisher
 	{
 		private readonly IBackgroundJobClient _backgroundJobClient;
 

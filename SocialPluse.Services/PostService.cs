@@ -37,15 +37,18 @@ namespace SocialPluse.Services
 				CreatedAt = DateTime.UtcNow
 			};
 
-			// Senior Fix: Atomic Write for Database & Hangfire
+			// 100% Atomic Write via Outbox Pattern
 			using var transaction = await _postRepository.BeginTransactionAsync();
 			try
 			{
+				// 1. Add the post to EF tracking
 				await _postRepository.AddAsync(post);
-				await _postRepository.SaveChangesAsync();
 
-				// Fanout job remains here because creating a post TRIGGERS the feed update
+				// 2. Add the outbox message to EF tracking (Inside this method)
 				_jobPublisher.EnqueuePostFanoutJob(post.Id, post.AuthorId);
+
+				// 3. Save BOTH to the database simultaneously! 
+				await _postRepository.SaveChangesAsync();
 
 				await transaction.CommitAsync();
 				return post.ToDto(username, 0, 0, false, false);

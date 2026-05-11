@@ -31,5 +31,6 @@ namespace SocialPluse.Persistence.DbContexts
 		public DbSet<Block> Blocks { get; set; }
 		public DbSet<Mute> Mutes { get; set; }
 		public DbSet<Report> Reports { get; set; }
+		public DbSet<OutboxMessage> OutboxMessages { get; set; }
 	}
 }
