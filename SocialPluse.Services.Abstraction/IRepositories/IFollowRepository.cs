@@ -1,6 +1,5 @@
-﻿using SocialPluse.Domain.Entities;
-using System;
-using System.Threading.Tasks;
+﻿using Microsoft.EntityFrameworkCore.Storage;
+using SocialPluse.Domain.Entities;
 
 namespace SocialPluse.Services.Abstraction.IRepositories
 {
@@ -11,5 +10,6 @@ namespace SocialPluse.Services.Abstraction.IRepositories
 		Task AddAsync(Follow follow);
 		void Remove(Follow follow);
 		Task<int> SaveChangesAsync();
+		Task<IDbContextTransaction> BeginTransactionAsync();
 	}
 }

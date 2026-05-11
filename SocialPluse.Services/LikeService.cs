@@ -32,15 +32,21 @@ namespace SocialPluse.Services
 				CreatedAt = DateTime.UtcNow
 			};
 
-			await _likeRepository.AddAsync(newLike);
-			await _likeRepository.SaveChangesAsync();
 
-			if (postAuthorId != userId)
+
+			using var transaction = await _likeRepository.BeginTransactionAsync();
+			try
 			{
-				_jobPublisher.EnqueueLikeNotificationJob(postAuthorId.Value, userId, postId);
-			}
+				await _likeRepository.AddAsync(newLike);
+				await _likeRepository.SaveChangesAsync();
 
-			return newLike.ToResponse();
+				if (postAuthorId != userId)
+					_jobPublisher.EnqueueLikeNotificationJob(postAuthorId.Value, userId, postId);
+
+				await transaction.CommitAsync();
+				return newLike.ToResponse();
+			}
+			catch { await transaction.RollbackAsync(); throw; }
 		}
 
 		public async Task UnlikePostAsync(Guid userId, Guid postId)

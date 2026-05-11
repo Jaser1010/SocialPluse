@@ -1,8 +1,9 @@
-﻿using SocialPluse.Domain.Entities;
+﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using SocialPluse.Domain.Entities;
 using SocialPluse.Persistence.DbContexts;
 using SocialPluse.Services.Abstraction.IRepositories;
 using SocialPluse.Shared.DTOs.Users;
-using Microsoft.EntityFrameworkCore;
 
 namespace SocialPluse.Persistence.Repositories
 {
@@ -29,7 +30,7 @@ namespace SocialPluse.Persistence.Repositories
 				.ToListAsync();
 
 			followeeIds.Add(userId);
-			var query = _context.Posts.Where(p => followeeIds.Contains(p.AuthorId));
+			var query = _context.Posts.AsNoTracking().Where(p => followeeIds.Contains(p.AuthorId));
 
 			if (cursor.HasValue)
 				query = query.Where(p => p.CreatedAt < cursor.Value);
@@ -39,12 +40,13 @@ namespace SocialPluse.Persistence.Repositories
 
 		public async Task<List<Post>> GetPostsByIdsAsync(IEnumerable<Guid> postIds)
 		{
-			return await _context.Posts.Where(p => postIds.Contains(p.Id)).ToListAsync();
+			return await _context.Posts.AsNoTracking().Where(p => postIds.Contains(p.Id)).ToListAsync();
 		}
 
 		public async Task<List<Post>> GetRecentPostsByAuthorAsync(Guid authorId, int limit)
 		{
 			return await _context.Posts
+				.AsNoTracking()
 				.Where(p => p.AuthorId == authorId)
 				.OrderByDescending(p => p.CreatedAt)
 				.Take(limit)
@@ -119,7 +121,7 @@ namespace SocialPluse.Persistence.Repositories
 
 		public async Task<List<Bookmark>> GetBookmarksAsync(Guid userId, DateTime? cursor, int limit)
 		{
-			var query = _context.Bookmarks.Where(b => b.UserId == userId);
+			var query = _context.Bookmarks.AsNoTracking().Where(b => b.UserId == userId);
 			if (cursor.HasValue) query = query.Where(b => b.CreatedAt < cursor.Value);
 			return await query.OrderByDescending(b => b.CreatedAt).Take(limit).ToListAsync();
 		}
@@ -132,7 +134,7 @@ namespace SocialPluse.Persistence.Repositories
 			var bookmarksCount = await _context.Bookmarks.CountAsync(b => b.UserId == userId);
 			var unreadNotifications = await _context.Notifications.CountAsync(n => n.RecipientUserId == userId && !n.IsRead);
 
-			var myPostIds = await _context.Posts.Where(p => p.AuthorId == userId).Select(p => p.Id).ToListAsync();
+			var myPostIds = await _context.Posts.AsNoTracking().Where(p => p.AuthorId == userId).Select(p => p.Id).ToListAsync();
 
 			var likesReceived = myPostIds.Count > 0 ? await _context.Likes.CountAsync(l => myPostIds.Contains(l.PostId)) : 0;
 			var commentsReceived = myPostIds.Count > 0 ? await _context.Comments.CountAsync(c => myPostIds.Contains(c.PostId)) : 0;
@@ -148,5 +150,9 @@ namespace SocialPluse.Persistence.Repositories
 				CommentsReceived = commentsReceived
 			};
 		}
+
+
+		public async Task<IDbContextTransaction> BeginTransactionAsync() =>
+				await _context.Database.BeginTransactionAsync();
 	}
 }

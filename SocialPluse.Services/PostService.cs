@@ -1,13 +1,12 @@
 ﻿using SocialPluse.Domain.Entities;
 using SocialPluse.Services.Abstraction.IRepositories;
 using SocialPluse.Services.Abstraction.IService;
+using SocialPluse.Services.Extensions;
+using SocialPluse.Services.Mappers;
 using SocialPluse.Shared.DTOs.Posts;
 using SocialPluse.Shared.DTOs.Users;
-using System;
-using System.Collections.Generic;
-using System.Linq;
+using System.Globalization;
 using System.Text.RegularExpressions;
-using SocialPluse.Services.Mappers;
 
 namespace SocialPluse.Services
 {
@@ -39,30 +38,27 @@ namespace SocialPluse.Services
 			{
 				Id = Guid.NewGuid(),
 				AuthorId = authorId,
-				Text = createPostRequest.Text,
+				Text = createPostRequest.Text.Sanitize(),
 				MediaUrl = createPostRequest.MediaUrl,
 				CreatedAt = DateTime.UtcNow
 			};
 
-			await _postRepository.AddAsync(post);
-			var affectedRows = await _postRepository.SaveChangesAsync();
-			if (affectedRows <= 0) throw new InvalidOperationException("Failed to save post to the database.");
+			using var transaction = await _postRepository.BeginTransactionAsync();
 
-			_jobPublisher.EnqueuePostFanoutJob(post.Id, post.AuthorId);
 
-			return new PostDto
+
+			try
 			{
-				Id = post.Id,
-				AuthorId = post.AuthorId,
-				AuthorUsername = username,
-				Text = post.Text,
-				MediaUrl = post.MediaUrl,
-				LikesCount = 0,
-				CommentsCount = 0,
-				IsLikedByCurrentUser = false,
-				IsBookmarkedByCurrentUser = false,
-				CreatedAt = post.CreatedAt
-			};
+				await _postRepository.AddAsync(post);
+				if (await _postRepository.SaveChangesAsync() <= 0)
+					throw new InvalidOperationException("Failed to save post.");
+
+				_jobPublisher.EnqueuePostFanoutJob(post.Id, post.AuthorId);
+
+				await transaction.CommitAsync();
+				return post.ToDto(username, 0, 0, false, false);
+			}
+			catch { await transaction.RollbackAsync(); throw; }
 		}
 
 		public async Task DeletePostAsync(Guid postId, Guid requestingUserId)
@@ -72,7 +68,8 @@ namespace SocialPluse.Services
 			if (post.AuthorId != requestingUserId) throw new UnauthorizedAccessException("You can only delete your own posts.");
 
 			await _postRepository.DeleteAsync(post);
-			if (await _postRepository.SaveChangesAsync() <= 0) throw new Exception("Failed to delete post.");
+			if (await _postRepository.SaveChangesAsync() <= 0)
+				throw new InvalidOperationException("Failed to delete post.");
 		}
 
 		public async Task<PostDto> GetByIdAsync(Guid postId, Guid? currentUserId = null)
@@ -85,7 +82,13 @@ namespace SocialPluse.Services
 		public async Task<FeedResponse> GetFeedAsync(Guid userId, FeedRequest request)
 		{
 			var pageSize = Math.Clamp(request.Limit, 1, 50);
-			DateTime? cursorDate = request.Cursor != null && DateTime.TryParse(request.Cursor, out var cd) ? cd : null;
+			DateTime? cursorDate = null;
+
+			// Unify cursor parsing to handle Unix Milliseconds
+			if (request.Cursor != null && double.TryParse(request.Cursor, NumberStyles.Any, CultureInfo.InvariantCulture, out double ms))
+			{
+				cursorDate = DateTimeOffset.FromUnixTimeMilliseconds((long)ms).UtcDateTime;
+			}
 
 			var posts = await _postRepository.GetFeedPostsAsync(userId, cursorDate, pageSize);
 			var postDtos = await EnrichPostsAsync(posts, userId);
@@ -93,7 +96,10 @@ namespace SocialPluse.Services
 			return new FeedResponse
 			{
 				Posts = postDtos,
-				NextCursor = posts.Count == pageSize ? posts.Last().CreatedAt.ToString("O") : null
+				// Return cursor as Unix Milliseconds string
+				NextCursor = posts.Count == pageSize
+							? ((DateTimeOffset)posts.Last().CreatedAt).ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture)
+							: null
 			};
 		}
 
@@ -114,17 +120,15 @@ namespace SocialPluse.Services
 		public async Task<FeedResponse> GetFeedFromCacheAsync(Guid userId, string? cursor, int limit)
 		{
 			var clampedLimit = Math.Clamp(limit, 1, 50);
-
 			var (postIds, nextCursor) = await _feedCache.GetCachedFeedAsync(userId, cursor, clampedLimit);
 
+			// Remove the "Cliff." If Redis returns nothing, ask the Database.
 			if (postIds.Count == 0)
 			{
-				if (cursor == null) return await GetFeedAsync(userId, new FeedRequest { Cursor = null, Limit = clampedLimit });
-				return new FeedResponse { Posts = [], NextCursor = null };
+				return await GetFeedAsync(userId, new FeedRequest { Cursor = cursor, Limit = clampedLimit });
 			}
 
 			var posts = await _postRepository.GetPostsByIdsAsync(postIds);
-
 			var postMap = posts.ToDictionary(p => p.Id);
 			var orderedPosts = postIds.Where(postMap.ContainsKey).Select(id => postMap[id]).ToList();
 			var postDtos = await EnrichPostsAsync(orderedPosts, userId);
@@ -208,29 +212,64 @@ namespace SocialPluse.Services
 				.Select(kvp => new TrendingTopicDto { Hashtag = kvp.Key, Mentions = kvp.Value }).ToList();
 		}
 
+
 		public async Task<bool> ToggleBookmarkAsync(Guid userId, Guid postId, bool shouldBookmark)
 		{
-			var bookmarkExists = await _postRepository.BookmarkExistsAsync(userId, postId);
-			if (shouldBookmark)
+			// Senior Logic: Using a transaction to ensure atomicity and prevent race conditions
+			using var transaction = await _postRepository.BeginTransactionAsync();
+			try
 			{
-				if (bookmarkExists) return true;
-				if (!await _postRepository.PostExistsAsync(postId)) throw new KeyNotFoundException("Post not found.");
+				var bookmarkExists = await _postRepository.BookmarkExistsAsync(userId, postId);
 
-				await _postRepository.AddBookmarkAsync(userId, postId);
+				if (shouldBookmark)
+				{
+					if (bookmarkExists)
+					{
+						await transaction.CommitAsync(); // Exit early if already done
+						return true;
+					}
+
+					// Verify post still exists before creating a relationship
+					if (!await _postRepository.PostExistsAsync(postId))
+						throw new KeyNotFoundException($"Post with ID {postId} not found.");
+
+					await _postRepository.AddBookmarkAsync(userId, postId);
+					await _postRepository.SaveChangesAsync();
+
+					await transaction.CommitAsync();
+					return true;
+				}
+
+				// Logic for removing a bookmark
+				if (!bookmarkExists)
+				{
+					await transaction.CommitAsync();
+					return false;
+				}
+
+				await _postRepository.RemoveBookmarkAsync(userId, postId);
 				await _postRepository.SaveChangesAsync();
-				return true;
-			}
 
-			if (!bookmarkExists) return false;
-			await _postRepository.RemoveBookmarkAsync(userId, postId);
-			await _postRepository.SaveChangesAsync();
-			return false;
+				await transaction.CommitAsync();
+				return false;
+			}
+			catch (Exception)
+			{
+				// If any DB error occurs (like a unique constraint violation), roll back everything
+				await transaction.RollbackAsync();
+				throw;
+			}
 		}
 
 		public async Task<FeedResponse> GetBookmarkedPostsAsync(Guid userId, string? cursor, int limit)
 		{
 			var clampedLimit = Math.Clamp(limit, 1, 50);
-			DateTime? cursorDate = !string.IsNullOrWhiteSpace(cursor) && DateTime.TryParse(cursor, out var cd) ? cd : null;
+			DateTime? cursorDate = null;
+			// Unified Unix MS parsing
+			if (cursor != null && double.TryParse(cursor, NumberStyles.Any, CultureInfo.InvariantCulture, out double ms))
+			{
+				cursorDate = DateTimeOffset.FromUnixTimeMilliseconds((long)ms).UtcDateTime;
+			}
 
 			var bookmarkRows = await _postRepository.GetBookmarksAsync(userId, cursorDate, clampedLimit);
 			var postIds = bookmarkRows.Select(b => b.PostId).ToList();
@@ -243,7 +282,10 @@ namespace SocialPluse.Services
 			return new FeedResponse
 			{
 				Posts = postDtos,
-				NextCursor = bookmarkRows.Count == clampedLimit ? bookmarkRows.Last().CreatedAt.ToString("O") : null,
+				// Unified Unix MS return format
+				NextCursor = bookmarkRows.Count == clampedLimit
+					? ((DateTimeOffset)bookmarkRows.Last().CreatedAt).ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture)
+					: null,
 			};
 		}
 

@@ -3,9 +3,6 @@ using SocialPluse.Domain.Entities;
 using SocialPluse.Persistence.DbContexts;
 using SocialPluse.Services.Abstraction.IRepositories;
 using SocialPluse.Shared.DTOs.Users;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 
 namespace SocialPluse.Persistence.Repositories
 {
@@ -21,8 +18,9 @@ namespace SocialPluse.Persistence.Repositories
 		public async Task<List<Post>> SearchPostsAsync(string query, int limit)
 		{
 			return await _context.Posts
+				.AsNoTracking()
 				.Where(p => EF.Functions.ToTsVector("english", p.Text)
-					.Matches(EF.Functions.WebSearchToTsQuery("english", query)))
+				.Matches(EF.Functions.WebSearchToTsQuery("english", query)))
 				.OrderByDescending(p => p.CreatedAt)
 				.Take(limit)
 				.ToListAsync();

@@ -7,7 +7,7 @@ namespace SocialPluse.Shared.DTOs.Comments
 	public class CommentFeedResponse
 	{
 		public List<CommentDto> Comments { get; set; } = new List<CommentDto>();
-		public DateTime? NextCursor { get; set; }
+		public string? NextCursor { get; set; }
 
 	}
 }

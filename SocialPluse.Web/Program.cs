@@ -1,9 +1,12 @@
+using FluentValidation;
+using FluentValidation.AspNetCore;
 using Hangfire;
 using Microsoft.AspNetCore.SignalR;
 using Scalar.AspNetCore;
 using SocialPluse.Persistence;
 using SocialPluse.Services;
 using SocialPluse.Services.Abstraction.IService;
+using SocialPluse.Shared.Validators;
 using SocialPluse.Web.Extensions;
 using SocialPluse.Web.Hubs;
 using SocialPluse.Web.Middleware;
@@ -22,6 +25,9 @@ namespace SocialPluse
 			builder.Services.AddControllers();
 			builder.Services.AddOpenApi();
 			builder.Services.AddSignalR();
+
+			builder.Services.AddFluentValidationAutoValidation();
+			builder.Services.AddValidatorsFromAssemblyContaining<CreatePostRequestValidator>();
 
 			// Required for building Media URLs in LocalMediaService
 			builder.Services.AddHttpContextAccessor();
@@ -43,6 +49,7 @@ namespace SocialPluse
 			// --- 2. Middleware Pipeline (Order is Critical) ---
 
 			// ABSOLUTE TOP: Must catch errors from all other middlewares
+			app.UseMiddleware<RequestLogMiddleware>();
 			app.UseGlobalExceptionMiddleware();
 
 			app.UseCors("AllowFrontend");

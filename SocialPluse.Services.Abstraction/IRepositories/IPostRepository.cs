@@ -1,8 +1,6 @@
-﻿using SocialPluse.Domain.Entities;
+﻿using Microsoft.EntityFrameworkCore.Storage;
+using SocialPluse.Domain.Entities;
 using SocialPluse.Shared.DTOs.Users;
-using System;
-using System.Collections.Generic;
-using System.Text;
 
 namespace SocialPluse.Services.Abstraction.IRepositories
 {
@@ -39,5 +37,7 @@ namespace SocialPluse.Services.Abstraction.IRepositories
 
 		// Analytics
 		Task<UserAnalyticsDto> GetUserAnalyticsAsync(Guid userId);
+
+		Task<IDbContextTransaction> BeginTransactionAsync();
 	}
 }

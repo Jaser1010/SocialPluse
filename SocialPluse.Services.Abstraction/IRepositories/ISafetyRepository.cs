@@ -1,7 +1,5 @@
-﻿using SocialPluse.Domain.Entities;
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
+﻿using Microsoft.EntityFrameworkCore.Storage;
+using SocialPluse.Domain.Entities;
 
 namespace SocialPluse.Services.Abstraction.IRepositories
 {
@@ -22,5 +20,7 @@ namespace SocialPluse.Services.Abstraction.IRepositories
 		Task<List<Report>> GetMyReportsAsync(Guid reporterId);
 
 		Task<int> SaveChangesAsync();
+
+		Task<IDbContextTransaction> BeginTransactionAsync();
 	}
 }

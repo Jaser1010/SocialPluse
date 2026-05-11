@@ -2,10 +2,6 @@
 using SocialPluse.Domain.Entities;
 using SocialPluse.Persistence.DbContexts;
 using SocialPluse.Services.Abstraction.IRepositories;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 
 namespace SocialPluse.Persistence.Repositories
 {
@@ -25,7 +21,7 @@ namespace SocialPluse.Persistence.Repositories
 
 		public async Task<List<Notification>> GetNotificationsAsync(Guid userId, DateTime? cursor, int limit)
 		{
-			var query = _context.Notifications.Where(n => n.RecipientUserId == userId);
+			var query = _context.Notifications.AsNoTracking().Where(n => n.RecipientUserId == userId);
 
 			if (cursor.HasValue)
 				query = query.Where(n => n.CreatedAt < cursor.Value);

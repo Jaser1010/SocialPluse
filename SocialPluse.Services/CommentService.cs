@@ -1,8 +1,11 @@
-﻿using SocialPluse.Domain.Entities;
+﻿using Microsoft.Extensions.Hosting;
+using SocialPluse.Domain.Entities;
 using SocialPluse.Services.Abstraction.IRepositories;
 using SocialPluse.Services.Abstraction.IService;
-using SocialPluse.Shared.DTOs.Comments;
+using SocialPluse.Services.Extensions;
 using SocialPluse.Services.Mappers;
+using SocialPluse.Shared.DTOs.Comments;
+using System.Globalization;
 
 namespace SocialPluse.Services
 {
@@ -32,27 +35,42 @@ namespace SocialPluse.Services
 				Id = Guid.NewGuid(),
 				PostId = postId,
 				AuthorId = authorId,
-				Text = request.Text,
+				Text = request.Text.Sanitize(),
 				CreatedAt = DateTime.UtcNow
 			};
 
 			var authorUsername = await _userRepository.GetUsernameAsync(authorId);
 
-			await _commentRepository.AddAsync(comment);
-			await _commentRepository.SaveChangesAsync();
 
-			if (postAuthorId != authorId)
+
+
+			using var transaction = await _commentRepository.BeginTransactionAsync();
+			try
 			{
-				_jobPublisher.EnqueueCommentNotificationJob(postAuthorId.Value, authorId, postId, comment.Id);
-			}
+				await _commentRepository.AddAsync(comment);
+				await _commentRepository.SaveChangesAsync();
 
-			return comment.ToDto(authorUsername ?? "Unknown");
+				if (postAuthorId != authorId)
+					_jobPublisher.EnqueueCommentNotificationJob(postAuthorId.Value, authorId, postId, comment.Id);
+
+				await transaction.CommitAsync();
+				return comment.ToDto(authorUsername ?? "Unknown");
+			}
+			catch { await transaction.RollbackAsync(); throw; }
 		}
 
-		public async Task<CommentFeedResponse> GetCommentsAsync(Guid postId, DateTime? cursor, int limit)
+		public async Task<CommentFeedResponse> GetCommentsAsync(Guid postId, string? cursor, int limit)
 		{
 			var clampedLimit = Math.Clamp(limit, 1, 50);
-			var comments = await _commentRepository.GetCommentsAsync(postId, cursor, clampedLimit);
+			DateTime? cursorDate = null;
+
+			// Parse Unix Milliseconds from the string cursor
+			if (cursor != null && double.TryParse(cursor, NumberStyles.Any, CultureInfo.InvariantCulture, out double ms))
+			{
+				cursorDate = DateTimeOffset.FromUnixTimeMilliseconds((long)ms).UtcDateTime;
+			}
+
+			var comments = await _commentRepository.GetCommentsAsync(postId, cursorDate, clampedLimit);
 
 			var authorIds = comments.Select(c => c.AuthorId).Distinct().ToList();
 			var authors = await _userRepository.GetUsernamesAsync(authorIds);
@@ -60,7 +78,10 @@ namespace SocialPluse.Services
 			return new CommentFeedResponse
 			{
 				Comments = comments.Select(c => c.ToDto(authors.GetValueOrDefault(c.AuthorId, "Unknown"))).ToList(),
-				NextCursor = comments.Count == clampedLimit ? comments.Last().CreatedAt : null
+				// Return NextCursor as a Unix Milliseconds string
+				NextCursor = comments.Count == clampedLimit
+							? ((DateTimeOffset)comments.Last().CreatedAt).ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture)
+							: null
 			};
 		}
 	}

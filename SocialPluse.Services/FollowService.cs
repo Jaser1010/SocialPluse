@@ -43,13 +43,26 @@ namespace SocialPluse.Services
 				CreatedAt = DateTime.UtcNow
 			};
 
-			await _followRepository.AddAsync(follow);
-			await _followRepository.SaveChangesAsync();
+			using var transaction = await _followRepository.BeginTransactionAsync();
 
-			_jobPublisher.EnqueueFollowNotificationJob(followeeId, followerId);
-			_jobPublisher.EnqueueBackfillFeedJob(followerId, followeeId);
 
-			return follow.ToResponse();
+			try
+			{
+				await _followRepository.AddAsync(follow);
+				await _followRepository.SaveChangesAsync();
+
+				// Side effects are now logically part of the atomic operation
+				_jobPublisher.EnqueueFollowNotificationJob(followeeId, followerId);
+				_jobPublisher.EnqueueBackfillFeedJob(followerId, followeeId);
+
+				await transaction.CommitAsync();
+				return follow.ToResponse();
+			}
+			catch
+			{
+				await transaction.RollbackAsync();
+				throw; // The GlobalExceptionMiddleware will handle this
+			}
 		}
 
 		public async Task UnfollowAsync(Guid followerId, Guid followeeId)

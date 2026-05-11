@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using SocialPluse.Domain.Entities;
 using SocialPluse.Persistence.DbContexts;
 using SocialPluse.Services.Abstraction.IRepositories;
@@ -41,7 +42,7 @@ namespace SocialPluse.Persistence.Repositories
 
 		public async Task<List<Comment>> GetCommentsAsync(Guid postId, DateTime? cursor, int limit)
 		{
-			var query = _context.Comments.Where(c => c.PostId == postId);
+			var query = _context.Comments.AsNoTracking().Where(c => c.PostId == postId);
 
 			if (cursor.HasValue)
 			{
@@ -53,5 +54,8 @@ namespace SocialPluse.Persistence.Repositories
 				.Take(limit)
 				.ToListAsync();
 		}
+
+		public async Task<IDbContextTransaction> BeginTransactionAsync() =>
+					await _context.Database.BeginTransactionAsync();
 	}
 }

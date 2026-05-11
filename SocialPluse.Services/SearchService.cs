@@ -1,7 +1,8 @@
 ﻿using SocialPluse.Services.Abstraction.IRepositories;
 using SocialPluse.Services.Abstraction.IService;
-using SocialPluse.Shared.DTOs.Search;
+using SocialPluse.Services.Extensions;
 using SocialPluse.Services.Mappers;
+using SocialPluse.Shared.DTOs.Search;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
@@ -22,7 +23,9 @@ namespace SocialPluse.Services
 		public async Task<SearchPostsResponse> SearchPostsAsync(string query, int limit)
 		{
 			var clampedLimit = Math.Clamp(limit, 1, 50);
-			var posts = await _searchRepository.SearchPostsAsync(query, clampedLimit);
+			var sanitizedQuery = query.Sanitize();
+
+			var posts = await _searchRepository.SearchPostsAsync(sanitizedQuery, clampedLimit);
 
 			var authorIds = posts.Select(p => p.AuthorId).Distinct().ToList();
 			var authors = await _userRepository.GetUsernamesAsync(authorIds);
@@ -43,8 +46,11 @@ namespace SocialPluse.Services
 		{
 			var clampedLimit = Math.Clamp(limit, 1, 50);
 
-			
-			var users = await _searchRepository.SearchUsersAsync(query, clampedLimit);
+			var sanitizedQuery = query.Sanitize();
+
+
+			var users = await _searchRepository.SearchUsersAsync(sanitizedQuery, clampedLimit);
+
 
 			return new SearchUsersResponse
 			{

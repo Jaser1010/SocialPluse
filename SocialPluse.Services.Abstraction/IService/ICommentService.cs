@@ -8,6 +8,6 @@ namespace SocialPluse.Services.Abstraction.IService
 	public interface ICommentService
 	{
 		Task<CommentDto> CreateCommentAsync(Guid authorId, Guid postId, CreateCommentRequest request);
-		Task<CommentFeedResponse> GetCommentsAsync(Guid postId, DateTime? cursor, int limit);
+		Task<CommentFeedResponse> GetCommentsAsync(Guid postId, string? cursor, int limit);
 	}
 }

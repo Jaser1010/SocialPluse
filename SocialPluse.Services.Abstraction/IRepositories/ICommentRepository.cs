@@ -1,7 +1,5 @@
-﻿using SocialPluse.Domain.Entities;
-using System;
-using System.Collections.Generic;
-using System.Text;
+﻿using Microsoft.EntityFrameworkCore.Storage;
+using SocialPluse.Domain.Entities;
 
 namespace SocialPluse.Services.Abstraction.IRepositories
 {
@@ -12,5 +10,6 @@ namespace SocialPluse.Services.Abstraction.IRepositories
 		Task AddAsync(Comment comment);
 		Task<int> SaveChangesAsync();
 		Task<List<Comment>> GetCommentsAsync(Guid postId, DateTime? cursor, int limit);
+		Task<IDbContextTransaction> BeginTransactionAsync();
 	}
 }
