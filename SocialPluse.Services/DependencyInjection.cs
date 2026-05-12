@@ -9,7 +9,7 @@ namespace SocialPluse.Services
 	{
 		public static IServiceCollection AddServices(this IServiceCollection services)
 		{
-			services.AddScoped<IAuthService, AuthService>();
+			
 			services.AddScoped<IUserService, UserService>();
 			services.AddScoped<IFollowService, FollowService>();
 			services.AddScoped<ILikeService, LikeService>();
@@ -23,6 +23,7 @@ namespace SocialPluse.Services
 			services.AddScoped<IBookmarkService, BookmarkService>();
 			services.AddScoped<IAnalyticsService, AnalyticsService>();
 
+			services.AddScoped<IPostEnricher, PostEnricher>();
 
 			// Register all Outbox Message Handlers
 			services.AddScoped<IOutboxMessageHandler, FanoutPostHandler>();
