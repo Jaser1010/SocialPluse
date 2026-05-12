@@ -22,7 +22,7 @@ namespace SocialPluse.Persistence
 		public static IServiceCollection AddPersistence(this IServiceCollection services, IConfiguration config)
 		{
 
-
+			services.AddScoped<IAuthService, AuthService>();
 			services.AddScoped<IMediaService, LocalMediaService>();
 			services.AddScoped<ISearchRepository, SearchRepository>();
 			services.AddScoped<ISafetyRepository, SafetyRepository>();

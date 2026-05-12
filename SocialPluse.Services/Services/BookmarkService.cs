@@ -1,8 +1,6 @@
 ﻿using System.Globalization;
-using SocialPluse.Domain.Entities;
 using SocialPluse.Services.Abstraction.IRepositories;
 using SocialPluse.Services.Abstraction.IService;
-using SocialPluse.Services.Mappers;
 using SocialPluse.Shared.DTOs.Posts;
 
 namespace SocialPluse.Services.Services
@@ -10,12 +8,12 @@ namespace SocialPluse.Services.Services
 	public class BookmarkService : IBookmarkService
 	{
 		private readonly IPostRepository _postRepository;
-		private readonly IUserRepository _userRepository;
+		private readonly IPostEnricher _postEnricher;
 
-		public BookmarkService(IPostRepository postRepository, IUserRepository userRepository)
+		public BookmarkService(IPostRepository postRepository, IPostEnricher postEnricher)
 		{
 			_postRepository = postRepository;
-			_userRepository = userRepository;
+			_postEnricher = postEnricher;
 		}
 
 		public async Task<bool> ToggleBookmarkAsync(Guid userId, Guid postId, bool shouldBookmark)
@@ -64,9 +62,7 @@ namespace SocialPluse.Services.Services
 			var postIds = bookmarkRows.Select(b => b.PostId).ToList();
 			var posts = await _postRepository.GetPostsByIdsAsync(postIds);
 
-			var postMap = posts.ToDictionary(p => p.Id);
-			var orderedPosts = postIds.Where(postMap.ContainsKey).Select(id => postMap[id]).ToList();
-			var postDtos = await EnrichPostsAsync(orderedPosts, userId);
+			var postDtos = await _postEnricher.EnrichAndOrderPostsAsync(posts, postIds, userId);
 
 			return new FeedResponse
 			{
@@ -75,33 +71,6 @@ namespace SocialPluse.Services.Services
 					? ((DateTimeOffset)bookmarkRows.Last().CreatedAt).ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture)
 					: null,
 			};
-		}
-
-		// Private helper to avoid circular dependencies while remaining decoupled
-		private async Task<List<PostDto>> EnrichPostsAsync(List<Post> posts, Guid? currentUserId = null)
-		{
-			if (posts.Count == 0) return [];
-			var postIds = posts.Select(p => p.Id).ToList();
-			var authorIds = posts.Select(p => p.AuthorId).Distinct().ToList();
-			var authorUsernames = await _userRepository.GetUsernamesAsync(authorIds);
-			var likeCounts = await _postRepository.GetLikeCountsAsync(postIds);
-			var commentCounts = await _postRepository.GetCommentCountsAsync(postIds);
-
-			HashSet<Guid> likedPostIds = [];
-			HashSet<Guid> bookmarkedPostIds = [];
-			if (currentUserId.HasValue)
-			{
-				likedPostIds = await _postRepository.GetLikedPostIdsAsync(currentUserId.Value, postIds);
-				bookmarkedPostIds = await _postRepository.GetBookmarkedPostIdsAsync(currentUserId.Value, postIds);
-			}
-
-			return posts.Select(p => p.ToDto(
-				authorUsernames.GetValueOrDefault(p.AuthorId, "Unknown"),
-				likeCounts.GetValueOrDefault(p.Id, 0),
-				commentCounts.GetValueOrDefault(p.Id, 0),
-				likedPostIds.Contains(p.Id),
-				bookmarkedPostIds.Contains(p.Id)
-			)).ToList();
 		}
 	}
 }

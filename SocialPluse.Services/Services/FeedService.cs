@@ -1,8 +1,6 @@
 ﻿using System.Globalization;
-using SocialPluse.Domain.Entities;
 using SocialPluse.Services.Abstraction.IRepositories;
 using SocialPluse.Services.Abstraction.IService;
-using SocialPluse.Services.Mappers;
 using SocialPluse.Shared.DTOs.Posts;
 
 namespace SocialPluse.Services.Services
@@ -10,17 +8,17 @@ namespace SocialPluse.Services.Services
 	public class FeedService : IFeedService
 	{
 		private readonly IPostRepository _postRepository;
-		private readonly IUserRepository _userRepository;
 		private readonly IFeedCacheService _feedCache;
+		private readonly IPostEnricher _postEnricher; 
 
 		public FeedService(
 			IPostRepository postRepository,
-			IUserRepository userRepository,
-			IFeedCacheService feedCache)
+			IFeedCacheService feedCache,
+			IPostEnricher postEnricher) 
 		{
 			_postRepository = postRepository;
-			_userRepository = userRepository;
 			_feedCache = feedCache;
+			_postEnricher = postEnricher;
 		}
 
 		public async Task<FeedResponse> GetFeedAsync(Guid userId, FeedRequest request)
@@ -34,8 +32,8 @@ namespace SocialPluse.Services.Services
 			}
 
 			var posts = await _postRepository.GetFeedPostsAsync(userId, cursorDate, pageSize);
-			var postDtos = await EnrichPostsAsync(posts, userId);
 
+			var postDtos = await _postEnricher.EnrichAndOrderPostsAsync(posts, null, userId);
 			return new FeedResponse
 			{
 				Posts = postDtos,
@@ -56,9 +54,8 @@ namespace SocialPluse.Services.Services
 			}
 
 			var posts = await _postRepository.GetPostsByIdsAsync(postIds);
-			var postMap = posts.ToDictionary(p => p.Id);
-			var orderedPosts = postIds.Where(postMap.ContainsKey).Select(id => postMap[id]).ToList();
-			var postDtos = await EnrichPostsAsync(orderedPosts, userId);
+
+			var postDtos = await _postEnricher.EnrichAndOrderPostsAsync(posts, postIds, userId);
 
 			return new FeedResponse
 			{
@@ -92,33 +89,5 @@ namespace SocialPluse.Services.Services
 		public async Task InvalidateFeedCacheAsync(Guid userId) => await _feedCache.InvalidateFeedCacheAsync(userId);
 
 		public async Task<int> GetNewPostsCountAsync(Guid userId, DateTime since) => await _postRepository.GetNewPostsCountAsync(userId, since);
-
-		// Shared helper method for DTO mapping
-		private async Task<List<PostDto>> EnrichPostsAsync(List<Post> posts, Guid? currentUserId = null)
-		{
-			if (posts.Count == 0) return [];
-
-			var postIds = posts.Select(p => p.Id).ToList();
-			var authorIds = posts.Select(p => p.AuthorId).Distinct().ToList();
-			var authorUsernames = await _userRepository.GetUsernamesAsync(authorIds);
-			var likeCounts = await _postRepository.GetLikeCountsAsync(postIds);
-			var commentCounts = await _postRepository.GetCommentCountsAsync(postIds);
-
-			HashSet<Guid> likedPostIds = [];
-			HashSet<Guid> bookmarkedPostIds = [];
-			if (currentUserId.HasValue)
-			{
-				likedPostIds = await _postRepository.GetLikedPostIdsAsync(currentUserId.Value, postIds);
-				bookmarkedPostIds = await _postRepository.GetBookmarkedPostIdsAsync(currentUserId.Value, postIds);
-			}
-
-			return posts.Select(p => p.ToDto(
-				authorUsernames.GetValueOrDefault(p.AuthorId, "Unknown"),
-				likeCounts.GetValueOrDefault(p.Id, 0),
-				commentCounts.GetValueOrDefault(p.Id, 0),
-				likedPostIds.Contains(p.Id),
-				bookmarkedPostIds.Contains(p.Id)
-			)).ToList();
-		}
 	}
 }
