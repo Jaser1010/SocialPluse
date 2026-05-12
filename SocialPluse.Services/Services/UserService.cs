@@ -3,7 +3,7 @@ using SocialPluse.Services.Abstraction.IService;
 using SocialPluse.Shared.DTOs.Users;
 using SocialPluse.Services.Extensions;
 
-namespace SocialPluse.Services
+namespace SocialPluse.Services.Services
 {
 	public class UserService : IUserService
 	{

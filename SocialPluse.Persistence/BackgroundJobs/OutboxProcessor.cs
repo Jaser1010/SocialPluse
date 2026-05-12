@@ -1,10 +1,11 @@
-﻿using System.Text.Json;
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using SocialPluse.Domain.Entities;
 using SocialPluse.Persistence.DbContexts;
 using SocialPluse.Services.Abstraction.IService;
+using System.Text.Json;
 
 namespace SocialPluse.Persistence.BackgroundJobs
 {
@@ -32,104 +33,82 @@ namespace SocialPluse.Persistence.BackgroundJobs
 					_logger.LogError(ex, "Critical failure in OutboxProcessor sweep.");
 				}
 
-				// Poll the database every 10 seconds. 
-				// In massive enterprise systems, this can be swapped for a Quartz Cron Job.
 				await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
 			}
 		}
 
 		private async Task ProcessOutboxMessagesAsync(CancellationToken stoppingToken)
 		{
-			// Background services are Singletons. To use Scoped services like AppDbContext, 
-			// we MUST create a temporary scope for this sweep.
 			using var scope = _serviceProvider.CreateScope();
 			var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-			// 1. Fetch unprocessed messages (Batching 20 at a time prevents memory spikes)
+			var handlers = scope.ServiceProvider.GetServices<IOutboxMessageHandler>();
+			var handlerMap = handlers.ToDictionary(h => h.HandledMessageType);
+
 			var messages = await dbContext.OutboxMessages
-				.Where(m => m.ProcessedOnUtc == null)
-				.OrderBy(m => m.OccurredOnUtc)
-				.Take(20)
+				.FromSqlRaw(@"
+                    SELECT * FROM ""OutboxMessages""
+                    WHERE ""ProcessedOnUtc"" IS NULL
+                    ORDER BY ""OccurredOnUtc""
+                    FOR UPDATE SKIP LOCKED
+                    LIMIT 20")
 				.ToListAsync(stoppingToken);
 
 			if (messages.Count == 0) return;
-
-			// Resolve target domain services
-			var feedService = scope.ServiceProvider.GetRequiredService<IFeedService>();
-			var notificationService = scope.ServiceProvider.GetRequiredService<INotificationService>();
 
 			foreach (var message in messages)
 			{
 				try
 				{
-					var doc = JsonDocument.Parse(message.Content);
+					// 1. THE IDEMPOTENCY CHECK
+					// Has this exact message ID already been processed successfully in the past?
+					var alreadyProcessed = await dbContext.IdempotentRecords
+						.AnyAsync(r => r.Id == message.Id, stoppingToken);
 
-					// 2. Route the message to the exact service logic
-					switch (message.Type)
+					if (alreadyProcessed)
 					{
-						case "FanoutPostToFeed":
-							await feedService.FanoutPostToFeedAsync(
-								doc.RootElement.GetProperty("PostId").GetGuid(),
-								doc.RootElement.GetProperty("AuthorId").GetGuid());
-							break;
-
-						case "CreateCommentNotification":
-							await notificationService.CreateCommentNotificationAsync(
-								doc.RootElement.GetProperty("PostAuthorId").GetGuid(),
-								doc.RootElement.GetProperty("CommentAuthorId").GetGuid(),
-								doc.RootElement.GetProperty("PostId").GetGuid(),
-								doc.RootElement.GetProperty("CommentId").GetGuid());
-							break;
-
-						case "CreateLikeNotification":
-							await notificationService.CreateLikeNotificationAsync(
-								doc.RootElement.GetProperty("RecipientId").GetGuid(),
-								doc.RootElement.GetProperty("ActorId").GetGuid(),
-								doc.RootElement.GetProperty("PostId").GetGuid());
-							break;
-
-						case "CreateFollowNotification":
-							await notificationService.CreateFollowNotificationAsync(
-								doc.RootElement.GetProperty("RecipientId").GetGuid(),
-								doc.RootElement.GetProperty("ActorId").GetGuid());
-							break;
-
-						case "BackfillFolloweeFeed":
-							await feedService.BackfillFolloweeFeedAsync(
-								doc.RootElement.GetProperty("FollowerId").GetGuid(),
-								doc.RootElement.GetProperty("FolloweeId").GetGuid());
-							break;
-
-						case "InvalidateFeedCache":
-							await feedService.InvalidateFeedCacheAsync(
-								doc.RootElement.GetProperty("UserId").GetGuid());
-							break;
-
-						case "CreateReportNotification":
-							await notificationService.CreateReportNotificationAsync(
-								doc.RootElement.GetProperty("TargetId").GetGuid(),
-								doc.RootElement.GetProperty("ReporterId").GetGuid());
-							break;
-
-						default:
-							_logger.LogWarning("Unknown Outbox Message Type: {Type}", message.Type);
-							break;
+						// A ghost retry! Mark the outbox as processed and skip execution.
+						_logger.LogInformation("Idempotency shield activated. Skipping duplicate message {Id}", message.Id);
+						message.ProcessedOnUtc = DateTime.UtcNow;
+						continue;
 					}
 
-					// 3. Mark as successfully processed
-					message.ProcessedOnUtc = DateTime.UtcNow;
+					if (handlerMap.TryGetValue(message.Type, out var handler))
+					{
+						using var doc = JsonDocument.Parse(message.Content);
+
+						// 2. ATOMIC EXECUTION (Wrap the business logic and the idempotency record together)
+						using var transaction = await dbContext.Database.BeginTransactionAsync(stoppingToken);
+
+						// Execute the business logic
+						await handler.HandleAsync(message.Id, doc, stoppingToken);
+
+						// Add the shield record so this can never run again
+						var shieldRecord = IdempotentRecord.Create(message.Id, message.Type);
+						dbContext.IdempotentRecords.Add(shieldRecord);
+
+						// Mark the outbox message as complete
+						message.ProcessedOnUtc = DateTime.UtcNow;
+
+						// Save everything atomically
+						await dbContext.SaveChangesAsync(stoppingToken);
+						await transaction.CommitAsync(stoppingToken);
+					}
+					else
+					{
+						_logger.LogWarning("No handler registered for Outbox Message Type: {Type}", message.Type);
+					}
 				}
 				catch (Exception ex)
 				{
-					// 4. Capture the error, but DO NOT crash the loop. 
-					// ProcessedOnUtc remains null, so it will retry on the next sweep.
 					message.Error = ex.Message;
 					_logger.LogError(ex, "Failed to process Outbox Message {Id}", message.Id);
+
+					// We save the error immediately, but DO NOT write to IdempotentRecords.
+					// This allows the system to retry it on the next sweep.
+					await dbContext.SaveChangesAsync(stoppingToken);
 				}
 			}
-
-			// 5. Commit the updates (marking them as processed) back to the database
-			await dbContext.SaveChangesAsync(stoppingToken);
 		}
 	}
 }

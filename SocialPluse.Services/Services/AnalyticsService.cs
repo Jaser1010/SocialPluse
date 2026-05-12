@@ -4,7 +4,7 @@ using SocialPluse.Services.Abstraction.IService;
 using SocialPluse.Shared.DTOs.Posts;
 using SocialPluse.Shared.DTOs.Users;
 
-namespace SocialPluse.Services
+namespace SocialPluse.Services.Services
 {
 	public class AnalyticsService : IAnalyticsService
 	{

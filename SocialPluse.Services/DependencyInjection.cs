@@ -1,5 +1,7 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using SocialPluse.Services.Abstraction.IService;
+using SocialPluse.Services.MessageHandlers;
+using SocialPluse.Services.Services;
 
 namespace SocialPluse.Services
 {
@@ -20,6 +22,17 @@ namespace SocialPluse.Services
 			services.AddScoped<IFeedService, FeedService>();
 			services.AddScoped<IBookmarkService, BookmarkService>();
 			services.AddScoped<IAnalyticsService, AnalyticsService>();
+
+
+			// Register all Outbox Message Handlers
+			services.AddScoped<IOutboxMessageHandler, FanoutPostHandler>();
+			services.AddScoped<IOutboxMessageHandler, LikeNotificationHandler>();
+			services.AddScoped<IOutboxMessageHandler, CommentNotificationHandler>();
+			services.AddScoped<IOutboxMessageHandler, FollowNotificationHandler>();
+			services.AddScoped<IOutboxMessageHandler, BackfillFeedHandler>();
+			services.AddScoped<IOutboxMessageHandler, InvalidateFeedCacheHandler>();
+			services.AddScoped<IOutboxMessageHandler, ReportNotificationHandler>();
+
 			return services;
 		}
 	}

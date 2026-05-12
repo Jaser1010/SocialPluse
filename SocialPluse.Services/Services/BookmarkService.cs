@@ -5,7 +5,7 @@ using SocialPluse.Services.Abstraction.IService;
 using SocialPluse.Services.Mappers;
 using SocialPluse.Shared.DTOs.Posts;
 
-namespace SocialPluse.Services
+namespace SocialPluse.Services.Services
 {
 	public class BookmarkService : IBookmarkService
 	{
