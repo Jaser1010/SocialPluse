@@ -31,8 +31,11 @@ namespace SocialPluse.Persistence
 			services.AddScoped<IFeedCacheService, RedisFeedCacheService>();
 			services.AddScoped<IUserRepository, UserRepository>();
 			services.AddScoped<IPostRepository, PostRepository>();
-			services.AddScoped<IBackgroundJobPublisher, HangfireJobPublisher>();
 
+			services.AddScoped<IBackgroundJobPublisher, OutboxJobPublisher>();
+
+
+			services.AddScoped<IIdentityWrapper, IdentityWrapper>();
 
 
 

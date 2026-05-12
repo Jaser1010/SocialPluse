@@ -8,7 +8,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 
-namespace SocialPluse.Services
+namespace SocialPluse.Services.Services
 {
 	public class AuthService : IAuthService
 	{

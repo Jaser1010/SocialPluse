@@ -7,7 +7,7 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace SocialPluse.Services
+namespace SocialPluse.Services.Services
 {
 	public class SearchService : ISearchService
 	{

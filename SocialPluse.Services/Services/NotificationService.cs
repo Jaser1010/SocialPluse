@@ -6,7 +6,7 @@ using SocialPluse.Services.Mappers;
 using SocialPluse.Shared.DTOs.Notifications;
 using System.Globalization;
 
-namespace SocialPluse.Services
+namespace SocialPluse.Services.Services
 {
 	public class NotificationService : INotificationService
 	{

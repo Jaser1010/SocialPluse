@@ -6,7 +6,7 @@ using SocialPluse.Services.Mappers;
 using SocialPluse.Shared.DTOs.Safety;
 
 
-namespace SocialPluse.Services
+namespace SocialPluse.Services.Services
 {
 	public class SafetyService : ISafetyService
 	{

@@ -4,7 +4,7 @@ using SocialPluse.Services.Abstraction.IService;
 using SocialPluse.Shared.DTOs.Follows;
 using SocialPluse.Services.Mappers;
 
-namespace SocialPluse.Services
+namespace SocialPluse.Services.Services
 {
 	public class FollowService : IFollowService
 	{
