@@ -31,12 +31,14 @@ namespace SocialPluse.Persistence
 			services.AddScoped<IFeedCacheService, RedisFeedCacheService>();
 			services.AddScoped<IUserRepository, UserRepository>();
 			services.AddScoped<IPostRepository, PostRepository>();
+			services.AddScoped<ICommentRepository, CommentRepository>();
+			services.AddScoped<IFollowRepository, FollowRepository>();
 
 			services.AddScoped<IBackgroundJobPublisher, OutboxJobPublisher>();
 
 
 			services.AddScoped<IIdentityWrapper, IdentityWrapper>();
-
+			
 
 
 
@@ -94,9 +96,11 @@ namespace SocialPluse.Persistence
 
 			// Redis cache configuration
 			services.AddStackExchangeRedisCache(options =>
-									options.Configuration = config.GetConnectionString("Redis"));
-			services.AddSingleton<IConnectionMultiplexer>(
-				ConnectionMultiplexer.Connect(config.GetConnectionString("Redis")!));
+						options.Configuration = config.GetConnectionString("Redis"));
+
+			// Add 'sp =>' to make this lazy-loaded!
+			services.AddSingleton<IConnectionMultiplexer>(sp =>
+						ConnectionMultiplexer.Connect(config.GetConnectionString("Redis")!));
 
 
 

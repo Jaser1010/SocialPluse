@@ -1,4 +1,5 @@
-﻿using SocialPluse.Services.Abstraction.IRepositories;
+﻿using Microsoft.Extensions.Logging;
+using SocialPluse.Services.Abstraction.IRepositories;
 using SocialPluse.Services.Abstraction.IService;
 using SocialPluse.Shared.DTOs.Users;
 using SocialPluse.Services.Extensions;
@@ -11,17 +12,20 @@ namespace SocialPluse.Services.Services
 		private readonly IPostRepository _postRepository;
 		private readonly IFollowRepository _followRepository;
 		private readonly IUserRepository _userRepository;
+		private readonly ILogger<UserService> _logger;
 
 		public UserService(
 			IIdentityWrapper identityWrapper,
 			IPostRepository postRepository,
 			IFollowRepository followRepository,
-			IUserRepository userRepository)
+			IUserRepository userRepository,
+			ILogger<UserService> logger)
 		{
 			_identityWrapper = identityWrapper;
 			_postRepository = postRepository;
 			_followRepository = followRepository;
 			_userRepository = userRepository;
+			_logger = logger;
 		}
 
 		private async Task<UserProfileDto> BuildUserProfileDtoAsync(UserDetailsDto user)
@@ -66,6 +70,8 @@ namespace SocialPluse.Services.Services
 
 			await _identityWrapper.UpdateProfileAsync(userId, cleanDisplayName, cleanBio, request.AvatarUrl);
 
+			_logger.LogInformation("User {UserId} successfully updated their profile information.", userId);
+
 			var updatedUser = await _identityWrapper.GetUserByIdAsync(userId);
 			return await BuildUserProfileDtoAsync(updatedUser!);
 		}
@@ -91,9 +97,21 @@ namespace SocialPluse.Services.Services
 		public async Task ChangePasswordAsync(Guid userId, ChangePasswordRequest request)
 		{
 			if (string.IsNullOrWhiteSpace(request.CurrentPassword) || string.IsNullOrWhiteSpace(request.NewPassword))
+			{
+				_logger.LogWarning("Security Alert: User {UserId} attempted to change password with empty fields.", userId);
 				throw new InvalidOperationException("Current and new password are required.");
+			}
 
-			await _identityWrapper.ChangePasswordAsync(userId, request.CurrentPassword, request.NewPassword);
+			try
+			{
+				await _identityWrapper.ChangePasswordAsync(userId, request.CurrentPassword, request.NewPassword);
+				_logger.LogInformation("Security Event: User {UserId} successfully changed their password.", userId);
+			}
+			catch (Exception ex)
+			{
+				_logger.LogError(ex, "Security Alert: Failed password change attempt for User {UserId}.", userId);
+				throw;
+			}
 		}
 
 		public async Task<bool> UserExistsAsync(Guid userId) => await _userRepository.UserExistsAsync(userId);

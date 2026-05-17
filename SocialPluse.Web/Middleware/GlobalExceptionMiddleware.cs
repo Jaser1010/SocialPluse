@@ -58,10 +58,13 @@ namespace SocialPluse.Web.Middleware
 
 			context.Response.StatusCode = statusCode;
 
-			// SECURITY: Mask sensitive system errors in Production, but show helpful client errors[cite: 17]
+			// SECURITY: Mask sensitive system errors in Production, but show helpful client errors
+			// UPDATE: Safely extracting the InnerException to expose database errors in Development
 			var message = (statusCode == 500 && !environment.IsDevelopment())
 				? "An unexpected server error occurred."
-				: exception.Message;
+				: exception.InnerException != null
+					? $"{exception.Message} | Inner Details: {exception.InnerException.Message}"
+					: exception.Message;
 
 			var response = new
 			{

@@ -6,5 +6,9 @@
 		{
 			return app.UseMiddleware<GlobalExceptionMiddleware>();
 		}
+		public static IApplicationBuilder UseCorrelationId(this IApplicationBuilder builder)
+		{
+			return builder.UseMiddleware<CorrelationIdMiddleware>();
+		}
 	}
 }

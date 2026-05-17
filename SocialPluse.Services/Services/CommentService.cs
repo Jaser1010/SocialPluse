@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Hosting;
+﻿using Microsoft.Extensions.Logging;
 using SocialPluse.Domain.Entities;
 using SocialPluse.Services.Abstraction.IRepositories;
 using SocialPluse.Services.Abstraction.IService;
@@ -14,22 +14,28 @@ namespace SocialPluse.Services.Services
 		private readonly ICommentRepository _commentRepository;
 		private readonly IUserRepository _userRepository;
 		private readonly IBackgroundJobPublisher _jobPublisher;
+		private readonly ILogger<CommentService> _logger;
 
 		public CommentService(
 			ICommentRepository commentRepository,
 			IUserRepository userRepository,
-			IBackgroundJobPublisher jobPublisher)
+			IBackgroundJobPublisher jobPublisher,
+			ILogger<CommentService> logger)
 		{
 			_commentRepository = commentRepository;
 			_userRepository = userRepository;
 			_jobPublisher = jobPublisher;
+			_logger = logger;
 		}
 
 		public async Task<CommentDto> CreateCommentAsync(Guid authorId, Guid postId, CreateCommentRequest request)
 		{
 			var postAuthorId = await _commentRepository.GetPostAuthorIdAsync(postId);
-			if (postAuthorId is null) throw new KeyNotFoundException($"Post with id {postId} not found.");
-
+			if (postAuthorId is null)
+			{
+				_logger.LogWarning("Attempt to comment on non-existent post with id {PostId} by user {AuthorId}", postId, authorId);
+				throw new KeyNotFoundException($"Post with id {postId} not found.");
+			}
 			var comment = new Comment
 			{
 				Id = Guid.NewGuid(),
@@ -54,9 +60,17 @@ namespace SocialPluse.Services.Services
 					_jobPublisher.EnqueueCommentNotificationJob(postAuthorId.Value, authorId, postId, comment.Id);
 
 				await transaction.CommitAsync();
+
+				_logger.LogInformation("User {AuthorId} created comment {CommentId} on post {PostId}", authorId, comment.Id, postId);
+
 				return comment.ToDto(authorUsername ?? "Unknown");
 			}
-			catch { await transaction.RollbackAsync(); throw; }
+			catch(Exception ex)
+			{
+				await transaction.RollbackAsync();
+				_logger.LogError(ex, "Failed to create comment {CommentId} on post {PostId} by user {AuthorId}. Transaction rolled back.", comment.Id, postId, authorId);
+				throw;
+			}
 		}
 
 		public async Task<CommentFeedResponse> GetCommentsAsync(Guid postId, string? cursor, int limit)

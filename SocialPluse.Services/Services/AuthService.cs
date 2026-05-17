@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using SocialPluse.Persistence.IdentityData.Entities;
 using SocialPluse.Services.Abstraction.IService;
@@ -14,11 +15,16 @@ namespace SocialPluse.Services.Services
 	{
 		private readonly UserManager<AppUser> _userManager;
 		private readonly IConfiguration _configuration;
+		private readonly ILogger<AuthService> _logger;
 
-		public AuthService(UserManager<AppUser> userManager, IConfiguration configuration)
+		public AuthService(
+			UserManager<AppUser> userManager,
+			IConfiguration configuration,
+			ILogger<AuthService> logger)
 		{
 			_userManager = userManager;
 			_configuration = configuration;
+			_logger = logger;
 		}
 
 
@@ -28,12 +34,24 @@ namespace SocialPluse.Services.Services
 			// 1. Find user by email 
 			var user = await _userManager.FindByEmailAsync(loginRequest.Email);
 			if (user == null)
+			{
+				// 2. Security Warning: Track failed logins
+				_logger.LogWarning("Failed login attempt: User with email {Email} not found.", loginRequest.Email);
 				throw new UnauthorizedAccessException("Invalid credentials.");
-			// 2. Check password
+			}
+				// 3. Check password
 			var passwordValid = await _userManager.CheckPasswordAsync(user, loginRequest.Password);
 			if (!passwordValid)
+			{
+				// 4. Security Warning: Track failed logins
+				_logger.LogWarning("Failed login attempt: Invalid password for user with email {Email}.", loginRequest.Email);
 				throw new UnauthorizedAccessException("Invalid credentials.");
-			// 3. return new AuthResponse { ... }
+			}
+
+			// 5. Success Event
+			_logger.LogInformation("User {UserId} successfully logged in.", user.Id);
+
+			// 6. return new AuthResponse { ... }
 			return new AuthResponse
 			{
 				AccessToken = await GenerateJwtAsync(user),
