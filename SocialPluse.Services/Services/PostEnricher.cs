@@ -12,7 +12,7 @@ namespace SocialPluse.Services.Services
 		private readonly IUserRepository _userRepository;
 
 		public PostEnricher(IPostRepository postRepository, IUserRepository userRepository)
-		{
+		{	
 			_postRepository = postRepository;
 			_userRepository = userRepository;
 		}
